@@ -1,0 +1,51 @@
+{
+  "Alpha": {
+    "receiver_models": {
+      "10.2.155.113": "argon",
+      "10.2.155.115": "argon",
+      "10.2.155.135": "argon",
+      "10.2.155.150": "bcuda",
+      "10.2.155.16": "silk",
+      "10.2.155.169": "argon",
+      "10.2.155.194": "krypton",
+      "10.2.155.196": "krypton",
+      "10.2.155.40": "alloy",
+      "10.2.155.55": "argon",
+      "10.2.155.57": "argon",
+      "10.2.155.59": "argon",
+      "10.2.155.91": "argon",
+      "10.2.155.92": "argon"
+    },
+    "firmware_version": "V7.00",
+    "firmware_suffix": {
+      "default": "_titan_V700_034.timg",
+      "tungsten": "_V700_034.img"
+    },
+    "logo": "ALPHA.png"
+  },
+  "Beta": {
+    "receiver_models": {
+      "10.2.155.103": "alloy",
+      "10.2.155.107": "argon",
+      "10.2.155.11": "stella",
+      "10.2.155.12": "stella",
+      "10.2.155.149": "alloy",
+      "10.2.155.15": "silk",
+      "10.2.155.177": "alloy",
+      "10.2.155.180": "argon",
+      "10.2.155.192": "alloy",
+      "10.2.155.226": "bcuda",
+      "10.2.155.45": "argon",
+      "10.2.155.51": "krypton",
+      "10.2.155.58": "argon",
+      "10.2.155.70": "krypton",
+      "10.2.155.73": "koolaid"
+    },
+    "firmware_version": "V5.83",
+    "firmware_suffix": {
+      "default": "_titan_V583_042.timg",
+      "tungsten": "_V583_042.img"
+    },
+    "logo": "BETA.png"
+  }
+}
