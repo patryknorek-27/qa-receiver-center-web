@@ -61,9 +61,13 @@ cargo --version
 
 Double-click "start-tauri-dev.bat" in the repository folder.
 
-The launcher installs JavaScript dependencies automatically on the first start and then opens the Tauri application.
+The launcher installs JavaScript dependencies automatically on the first start and then opens the Tauri application. The first Rust build downloads and compiles the required packages, so it can take several minutes. Keep the launcher window open until the application appears.
 
 No local password file or password configuration is required.
+
+The launcher also applies a process-local Cargo compatibility setting for Trimble workstations where the corporate network cannot reach the Windows certificate revocation service. It does not change the global Cargo or Windows configuration, and regular TLS certificate validation remains enabled.
+
+The Vite development server ignores the Rust build directory. Cargo monitors Rust source changes independently, which prevents Windows file-lock errors while Rust executables are being compiled.
 
 ## Optional Environment Overrides
 
