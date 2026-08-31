@@ -560,10 +560,11 @@ async fn list_firmware_releases() -> Result<FirmwareReleaseCatalog, String> {
 #[tauri::command]
 async fn list_firmware_builds(
     release_id: String,
+    release_name: String,
     mode: String,
 ) -> Result<FirmwareBuildCatalog, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        fetch_firmware_build_catalog_blocking(&release_id, &mode)
+        fetch_firmware_build_catalog_blocking(&release_id, &release_name, &mode)
     })
     .await
     .map_err(|err| format!("Firmware build catalog task failed: {err}"))?
@@ -2182,6 +2183,7 @@ fn fetch_firmware_release_catalog_blocking() -> Result<FirmwareReleaseCatalog, S
 
 fn fetch_firmware_build_catalog_blocking(
     release_id: &str,
+    release_name: &str,
     mode: &str,
 ) -> Result<FirmwareBuildCatalog, String> {
     let release_id = validate_firmware_release_id(release_id)?;
@@ -2196,7 +2198,7 @@ fn fetch_firmware_build_catalog_blocking(
         .map_err(|err| format!("Firmware release {release_id} returned an error: {err}"))?
         .text()
         .map_err(|err| format!("Cannot read firmware release {release_id}: {err}"))?;
-    let builds = parse_firmware_build_links(&index_url, &html, mode)?;
+    let builds = parse_firmware_build_links(&index_url, &html, release_name, mode)?;
 
     if builds.is_empty() {
         return Err(format!(
@@ -2356,14 +2358,14 @@ fn parse_firmware_release_links(
 fn parse_firmware_build_links(
     release_index_url: &Url,
     html: &str,
+    release_name: &str,
     mode: &str,
 ) -> Result<Vec<FirmwareBuildSummary>, String> {
-    let page_channel = firmware_page_channel(html)?;
     let release_url = release_index_url
         .join("./")
         .map_err(|err| format!("Invalid firmware release directory URL: {err}"))?;
     let mut seen = BTreeSet::new();
-    let mut builds = Vec::new();
+    let mut candidates = Vec::new();
     for (href, label) in extract_html_links(html)? {
         let href = href.trim();
         if href.is_empty() || href.starts_with('?') || href.starts_with('#') {
@@ -2392,19 +2394,29 @@ fn parse_firmware_build_links(
         }
         let encoded_build_id = &file_name[..file_name.len() - ".html".len()];
         let build_id = percent_decode_catalog_segment(encoded_build_id);
-        if validate_firmware_build_id(&build_id).is_err()
-            || !firmware_build_matches_mode(&label, page_channel.as_deref(), mode)
-            || !seen.insert(build_id.clone())
-        {
+        if validate_firmware_build_id(&build_id).is_err() || !seen.insert(build_id.clone()) {
             continue;
         }
-        builds.push(FirmwareBuildSummary {
+        candidates.push((build_id, label, joined));
+    }
+
+    let page_channel = explicit_firmware_channel(release_name)
+        .map(str::to_string)
+        .or(firmware_page_channel(html)?)
+        .or_else(|| {
+            consistent_firmware_channel(candidates.iter().map(|(_, label, _)| label.as_str()))
+                .map(str::to_string)
+        });
+
+    Ok(candidates
+        .into_iter()
+        .filter(|(_, label, _)| firmware_build_matches_mode(label, page_channel.as_deref(), mode))
+        .map(|(build_id, label, joined)| FirmwareBuildSummary {
             id: build_id.clone(),
             name: concise_firmware_build_label(&label, &build_id),
             url: joined.to_string(),
-        });
-    }
-    Ok(builds)
+        })
+        .collect())
 }
 
 fn firmware_page_channel(html: &str) -> Result<Option<String>, String> {
@@ -2437,6 +2449,15 @@ fn explicit_firmware_channel(value: &str) -> Option<&'static str> {
         (false, true) => Some("Beta"),
         _ => None,
     }
+}
+
+fn consistent_firmware_channel<'a>(values: impl Iterator<Item = &'a str>) -> Option<&'static str> {
+    let channels = values
+        .filter_map(explicit_firmware_channel)
+        .collect::<BTreeSet<_>>();
+    (channels.len() == 1)
+        .then(|| channels.into_iter().next())
+        .flatten()
 }
 
 fn concise_firmware_build_label(label: &str, build_id: &str) -> String {
@@ -6545,14 +6566,64 @@ mod tests {
         "#;
 
         let alpha =
-            parse_firmware_build_links(&index, html, "Alpha").expect("alpha catalog should parse");
+            parse_firmware_build_links(&index, html, "V6.60 [ Alpha and Beta releases ]", "Alpha")
+                .expect("alpha catalog should parse");
         let beta =
-            parse_firmware_build_links(&index, html, "Beta").expect("beta catalog should parse");
+            parse_firmware_build_links(&index, html, "V6.60 [ Alpha and Beta releases ]", "Beta")
+                .expect("beta catalog should parse");
 
         assert_eq!(alpha[0].id, "0.40");
         assert!(alpha[0].name.contains("Alpha (main)"));
+        assert_eq!(alpha.len(), 1);
         assert_eq!(beta[0].id, "0.43");
         assert!(beta[0].name.contains("Beta (66X branch)"));
+        assert_eq!(beta.len(), 1);
+    }
+
+    #[test]
+    fn build_catalog_parser_infers_channel_from_builds_on_neutral_page() {
+        let index = firmware_release_index_url("V6.62").expect("release index should parse");
+        let html = r#"
+            <h1>V6.62</h1>
+            <a href="6.62.html">Official Customer Release (on 660_only branch) V6.62 [August 28, 2026] for the Orbit project.</a>
+            <a href="0.52.html">Quarantine Beta (on 660_only branch) V6.62-0.52 [August 20, 2026] for the Orbit project.</a>
+            <a href="0.51.html">Quarantine Beta (on 660_only branch) V6.62-0.51 [August 04, 2026] for the Orbit project.</a>
+            <a href="0.50.html">Quarantine Beta (on 660_only branch) V6.62-0.50 [July 29, 2026] for the Orbit project.</a>
+        "#;
+
+        let release_name = "V6.62";
+        let beta = parse_firmware_build_links(&index, html, release_name, "Beta")
+            .expect("beta catalog should parse");
+        let alpha = parse_firmware_build_links(&index, html, release_name, "Alpha")
+            .expect("alpha catalog should parse");
+
+        assert_eq!(
+            beta.iter()
+                .map(|build| build.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["6.62", "0.52", "0.51", "0.50"]
+        );
+        assert!(beta[0].name.starts_with("Official Customer Release"));
+        assert!(alpha.is_empty());
+    }
+
+    #[test]
+    fn build_catalog_parser_inherits_channel_from_release_catalog_name() {
+        let index = firmware_release_index_url("V6.62").expect("release index should parse");
+        let html = r#"
+            <h1>V6.62</h1>
+            <a href="6.62.html">Official Customer Release V6.62 [August 28, 2026]</a>
+        "#;
+        let release_name = "V6.62 [ Orbit Project Official and Beta releases on 660 Only branch ]";
+
+        let beta = parse_firmware_build_links(&index, html, release_name, "Beta")
+            .expect("beta catalog should parse");
+        let alpha = parse_firmware_build_links(&index, html, release_name, "Alpha")
+            .expect("alpha catalog should parse");
+
+        assert_eq!(beta.len(), 1);
+        assert_eq!(beta[0].id, "6.62");
+        assert!(alpha.is_empty());
     }
 
     #[test]
@@ -6564,10 +6635,10 @@ mod tests {
             <a href="0.46.html">Quarantine Release 5.83/6.43 0.46 [August 22, 2025]</a>
         "#;
 
-        let beta =
-            parse_firmware_build_links(&index, html, "Beta").expect("beta catalog should parse");
-        let alpha =
-            parse_firmware_build_links(&index, html, "Alpha").expect("alpha catalog should parse");
+        let beta = parse_firmware_build_links(&index, html, "V5.83/6.43", "Beta")
+            .expect("beta catalog should parse");
+        let alpha = parse_firmware_build_links(&index, html, "V5.83/6.43", "Alpha")
+            .expect("alpha catalog should parse");
 
         assert_eq!(beta.len(), 2);
         assert!(alpha.is_empty());

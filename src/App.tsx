@@ -1345,7 +1345,11 @@ function FirmwareModulePage({
     [standaloneReleaseInspection],
   )
   const activeSelectedReleaseId = selectedReleaseMode === current.mode ? selectedReleaseId : ''
+  const activeSelectedReleaseName =
+    releaseCatalog?.releases.find((release) => release.id === activeSelectedReleaseId)?.name || activeSelectedReleaseId
   const activeSelectedBuildId = selectedReleaseMode === current.mode ? selectedBuildId : ''
+  const standaloneSelectedReleaseName =
+    releaseCatalog?.releases.find((release) => release.id === standaloneSelectedReleaseId)?.name || standaloneSelectedReleaseId
   const isCurrentBuildCatalogLoading = selectedReleaseMode === current.mode && isBuildCatalogLoading
   const isCurrentReleaseInspectionLoading = selectedReleaseMode === current.mode && isReleaseInspectionLoading
   const visibleReleaseCatalogError =
@@ -1626,6 +1630,7 @@ function FirmwareModulePage({
         setReleaseCatalogErrorMode('')
         const catalog = await invoke<FirmwareBuildCatalog>('list_firmware_builds', {
           releaseId: activeSelectedReleaseId,
+          releaseName: activeSelectedReleaseName,
           mode: current.mode,
         })
         if (!cancelled) {
@@ -1651,7 +1656,15 @@ function FirmwareModulePage({
     return () => {
       cancelled = true
     }
-  }, [activeSelectedReleaseId, current.mode, groupReleaseMode, isGroupUpdate, releaseCatalogRevision, selectedReleaseMode])
+  }, [
+    activeSelectedReleaseId,
+    activeSelectedReleaseName,
+    current.mode,
+    groupReleaseMode,
+    isGroupUpdate,
+    releaseCatalogRevision,
+    selectedReleaseMode,
+  ])
 
   useEffect(() => {
     if (
@@ -1748,6 +1761,7 @@ function FirmwareModulePage({
           (['Alpha', 'Beta'] as const).map(async (mode) => {
             const catalog = await invoke<FirmwareBuildCatalog>('list_firmware_builds', {
               releaseId: standaloneSelectedReleaseId,
+              releaseName: standaloneSelectedReleaseName,
               mode,
             })
             return catalog.builds.map((build) => ({ ...build, mode }))
@@ -1789,7 +1803,7 @@ function FirmwareModulePage({
     return () => {
       cancelled = true
     }
-  }, [page, standaloneSelectedReleaseId])
+  }, [page, standaloneSelectedReleaseId, standaloneSelectedReleaseName])
 
   useEffect(() => {
     if (
