@@ -6,7 +6,7 @@ The application shows receiver status, helps with firmware updates, creates conf
 
 ## Application Structure
 
-![QA Receiver Center application structure](docs/qa-receiver-center-architecture.png)
+<img src="docs/qa-receiver-center-architecture.png" alt="QA Receiver Center application structure" width="700">
 
 The diagram shows the main parts of the current application.
 
