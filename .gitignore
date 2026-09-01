@@ -3,6 +3,10 @@ node_modules/
 dist/
 dist-ssr/
 src-tauri/target/
+services/**/bin/
+services/**/obj/
+services/**/publish/
+.dotnet-home/
 
 # Local configuration and credentials
 .env

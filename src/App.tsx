@@ -812,7 +812,7 @@ function App() {
   const receiverSectionSubtitle =
     activePage === 'Dashboard'
       ? `${offlineReceivers.length} receivers offline`
-      : `${receivers.length} loaded from qa-receivers.json`
+      : `${receivers.length} receiver records loaded`
 
   if (!isAuthenticated) {
     return (

@@ -1,6 +1,6 @@
 [package]
 name = "qa-receiver-center"
-version = "0.1.0"
+version = "0.2.0"
 description = "Desktop QA tool for receiver operations, diagnostics, firmware updates, and reports."
 authors = ["QA Team"]
 license = ""
@@ -26,3 +26,4 @@ tauri-plugin-log = "2"
 reqwest = { version = "0.12", features = ["blocking"] }
 roxmltree = "0.21"
 regex = "1.12"
+sha2 = "0.10"

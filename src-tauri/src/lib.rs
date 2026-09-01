@@ -8,8 +8,10 @@ use regex::Regex;
 use reqwest::blocking::Client;
 use reqwest::header::{CONTENT_TYPE, EXPECT};
 use reqwest::Url;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::net::Ipv4Addr;
@@ -44,6 +46,7 @@ const FAST_IMAGE_VERIFY_PROGRESS: f64 = 98.0;
 const GROUPS_JSON_PATH: &str =
     r"\\det-fileserver\TeamBuilds\QA\rx-monitoring-dhs\main\qa-receivers.json";
 const GROUPS_ADO_API_URL: &str = "https://det-ados/tfs/Terrasat/QA/_apis/git/repositories/rx-monitoring-dhs/items?path=%2Fqa-receivers.json&versionDescriptor.version=main&versionDescriptor.versionType=branch&includeContent=true&api-version=7.0";
+const RECEIVER_REGISTRY_BASE_URL: &str = "http://HHKNQA1-DE-DE04.eu.trimblecorp.net:8787";
 const FIRMWARE_RELEASE_BASE_URL: &str = "http://higgs.eng.trimble.com/data_drive/WWW/Releases";
 const DEFAULT_FIRMWARE_CONFIG: &str = include_str!("../resources/firmware-configs.json");
 const INSTALL_MARKERS: [&str; 2] = [
@@ -120,6 +123,20 @@ struct UpdateSafetySettings {
     post_restart_delay_minutes: u32,
     pre_restart_safety_margin_minutes: u32,
     restart_cycle_minutes: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegistrySettingEnvelope<T> {
+    value: T,
+    row_version: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RegistrySettingUpdate<'a, T> {
+    value: &'a T,
+    row_version: i64,
 }
 
 impl Default for UpdateSafetySettings {
@@ -347,6 +364,58 @@ struct FirmwareSingleUpdateHistoryEntry {
     clone_file_name: Option<String>,
     clone_file_path: Option<String>,
     errors: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegistryCloneFileSummary {
+    file_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegistryFirmwareHistoryEntry {
+    job_id: String,
+    batch_id: Option<String>,
+    operation_type: Option<String>,
+    group_name: Option<String>,
+    ip: String,
+    receiver_name: Option<String>,
+    model: String,
+    target_file: String,
+    started_at: String,
+    completed_at: Option<String>,
+    result: String,
+    final_firmware_version: Option<String>,
+    clone_file: Option<RegistryCloneFileSummary>,
+    errors: Vec<String>,
+}
+
+impl RegistryFirmwareHistoryEntry {
+    fn into_history_entry(self) -> FirmwareSingleUpdateHistoryEntry {
+        let clone_file_name = self.clone_file.as_ref().map(|file| file.file_name.clone());
+        let clone_file_path = self
+            .clone_file
+            .as_ref()
+            .map(|_| format!("registry://firmware-history/{}", self.job_id));
+        FirmwareSingleUpdateHistoryEntry {
+            job_id: self.job_id,
+            batch_id: self.batch_id,
+            operation_type: self.operation_type,
+            group_name: self.group_name,
+            ip: self.ip,
+            receiver_name: self.receiver_name,
+            model: self.model,
+            target_file: self.target_file,
+            started_at: self.started_at,
+            completed_at: self.completed_at,
+            result: self.result,
+            final_firmware_version: self.final_firmware_version,
+            clone_file_name,
+            clone_file_path,
+            errors: self.errors,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -891,7 +960,35 @@ fn cancel_single_firmware_update_job(
 
 #[tauri::command]
 fn get_single_firmware_update_history() -> Result<Vec<FirmwareSingleUpdateHistoryEntry>, String> {
-    read_single_update_history()
+    let local_history = read_single_update_history().unwrap_or_default();
+    let mut synchronization_failed = false;
+    for entry in &local_history {
+        if let Err(error) = sync_registry_firmware_history_entry(entry) {
+            log::warn!("Cannot synchronize local firmware history: {error}");
+            if !error.contains("HTTP 409") {
+                synchronization_failed = true;
+                break;
+            }
+        }
+    }
+
+    match read_registry_firmware_history() {
+        Ok(shared_history) => {
+            if let Err(error) = write_registry_history_cache(&shared_history) {
+                log::warn!("Cannot refresh shared firmware history cache: {error}");
+            }
+            if synchronization_failed {
+                Ok(merge_firmware_history(shared_history, local_history))
+            } else {
+                Ok(shared_history)
+            }
+        }
+        Err(error) => {
+            log::warn!("Shared firmware history is unavailable; using local cache: {error}");
+            let cached_history = read_registry_history_cache().unwrap_or_default();
+            Ok(merge_firmware_history(cached_history, local_history))
+        }
+    }
 }
 
 #[tauri::command]
@@ -906,24 +1003,37 @@ fn delete_single_firmware_update_history(
         return Err("History entry ID is required.".to_string());
     }
 
-    let mut history = read_single_update_history()?;
-    let entry = history
+    let mut local_history = read_single_update_history()?;
+    let local_entry = local_history
         .iter()
         .find(|entry| entry.job_id == job_id)
-        .cloned()
-        .ok_or_else(|| "Firmware update history entry was not found.".to_string())?;
+        .cloned();
 
-    if let Some(path) = entry.clone_file_path.as_deref() {
+    delete_registry_firmware_history(job_id)?;
+
+    if let Some(path) = local_entry
+        .as_ref()
+        .and_then(|entry| entry.clone_file_path.as_deref())
+    {
         delete_clone_file_backup(path)?;
     }
 
-    history.retain(|entry| entry.job_id != job_id);
-    write_single_update_history(&history)?;
-    Ok(history)
+    local_history.retain(|entry| entry.job_id != job_id);
+    write_single_update_history(&local_history)?;
+    let shared_history = read_registry_firmware_history()?;
+    write_registry_history_cache(&shared_history)?;
+    Ok(merge_firmware_history(shared_history, local_history))
 }
 
 #[tauri::command]
 fn download_clone_file_backup(path: String) -> Result<CloneFileDownloadResult, String> {
+    if let Some(job_id) = path.trim().strip_prefix("registry://firmware-history/") {
+        if job_id.trim().is_empty() {
+            return Err("Shared Clone File reference is invalid.".to_string());
+        }
+        return download_registry_clone_file(job_id.trim());
+    }
+
     let source = PathBuf::from(path.trim());
     if !source.is_file() {
         return Err("Clone file backup does not exist.".to_string());
@@ -5461,6 +5571,10 @@ fn single_update_history_path() -> Result<PathBuf, String> {
     Ok(qa_receiver_center_data_dir()?.join("single-update-history.json"))
 }
 
+fn registry_history_cache_path() -> Result<PathBuf, String> {
+    Ok(qa_receiver_center_data_dir()?.join("shared-update-history-cache.json"))
+}
+
 fn qa_receiver_center_data_dir() -> Result<PathBuf, String> {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
@@ -5493,7 +5607,336 @@ fn validate_update_safety_settings(settings: &UpdateSafetySettings) -> Result<()
     Ok(())
 }
 
+fn registry_setting_url(key: &str) -> String {
+    format!("{}/api/v1/settings/{key}", registry_base_url())
+}
+
+fn registry_base_url() -> String {
+    std::env::var("QA_RECEIVER_REGISTRY_URL")
+        .unwrap_or_else(|_| RECEIVER_REGISTRY_BASE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn registry_actor() -> String {
+    let username = std::env::var("USERNAME").unwrap_or_else(|_| "unknown".to_string());
+    match std::env::var("USERDOMAIN") {
+        Ok(domain) if !domain.trim().is_empty() => format!("{}\\{}", domain.trim(), username),
+        _ => username,
+    }
+}
+
+fn registry_http_client() -> Result<Client, String> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|err| format!("Cannot create receiver registry client: {err}"))
+}
+
+fn registry_file_http_client() -> Result<Client, String> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|err| format!("Cannot create receiver registry file client: {err}"))
+}
+
+fn registry_firmware_history_url(job_id: Option<&str>, clone_file: bool) -> Result<Url, String> {
+    let mut url = Url::parse(&registry_base_url())
+        .map_err(|err| format!("Receiver registry URL is invalid: {err}"))?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "Receiver registry URL cannot contain this base path.".to_string())?;
+        segments.pop_if_empty();
+        segments.extend(["api", "v1", "firmware-history"]);
+        if let Some(job_id) = job_id {
+            segments.push(job_id);
+        }
+        if clone_file {
+            segments.push("clone-file");
+        }
+    }
+    Ok(url)
+}
+
+fn read_registry_firmware_history() -> Result<Vec<FirmwareSingleUpdateHistoryEntry>, String> {
+    let mut url = registry_firmware_history_url(None, false)?;
+    url.query_pairs_mut().append_pair("limit", "1000");
+    let response = registry_http_client()?
+        .get(url.clone())
+        .send()
+        .map_err(|err| format!("Cannot read shared firmware history from {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "read shared firmware history",
+            url.as_str(),
+            response,
+        ));
+    }
+
+    let body = response
+        .text()
+        .map_err(|err| format!("Cannot read shared firmware history response: {err}"))?;
+    let entries: Vec<RegistryFirmwareHistoryEntry> = serde_json::from_str(&body)
+        .map_err(|err| format!("Shared firmware history response is invalid: {err}"))?;
+    Ok(entries
+        .into_iter()
+        .map(RegistryFirmwareHistoryEntry::into_history_entry)
+        .collect())
+}
+
+fn upsert_registry_firmware_history(
+    entry: &FirmwareSingleUpdateHistoryEntry,
+) -> Result<RegistryFirmwareHistoryEntry, String> {
+    let url = registry_firmware_history_url(Some(&entry.job_id), false)?;
+    let body = serde_json::to_string(entry)
+        .map_err(|err| format!("Cannot serialize firmware history entry: {err}"))?;
+    let response = registry_http_client()?
+        .put(url.clone())
+        .header(CONTENT_TYPE, "application/json")
+        .header("X-QA-User", registry_actor())
+        .body(body)
+        .send()
+        .map_err(|err| format!("Cannot save shared firmware history to {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "save shared firmware history",
+            url.as_str(),
+            response,
+        ));
+    }
+
+    let body = response
+        .text()
+        .map_err(|err| format!("Cannot read saved firmware history response: {err}"))?;
+    serde_json::from_str(&body)
+        .map_err(|err| format!("Saved firmware history response is invalid: {err}"))
+}
+
+fn upload_registry_clone_file(
+    job_id: &str,
+    file_name: &str,
+    local_path: &str,
+) -> Result<(), String> {
+    if local_path.starts_with("registry://") {
+        return Ok(());
+    }
+    let source = PathBuf::from(local_path);
+    if !source.is_file() {
+        return Err(format!(
+            "Local Clone File does not exist: {}",
+            source.display()
+        ));
+    }
+    let contents = fs::read(&source)
+        .map_err(|err| format!("Cannot read local Clone File {}: {err}", source.display()))?;
+    let mut url = registry_firmware_history_url(Some(job_id), true)?;
+    url.query_pairs_mut().append_pair("fileName", file_name);
+    let response = registry_file_http_client()?
+        .put(url.clone())
+        .header(CONTENT_TYPE, "application/xml")
+        .header("X-QA-User", registry_actor())
+        .body(contents)
+        .send()
+        .map_err(|err| format!("Cannot upload Clone File to {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "upload Clone File",
+            url.as_str(),
+            response,
+        ));
+    }
+    Ok(())
+}
+
+fn sync_registry_firmware_history_entry(
+    entry: &FirmwareSingleUpdateHistoryEntry,
+) -> Result<(), String> {
+    let remote = upsert_registry_firmware_history(entry)?;
+    if remote.clone_file.is_none() {
+        if let (Some(file_name), Some(local_path)) = (
+            entry.clone_file_name.as_deref(),
+            entry.clone_file_path.as_deref(),
+        ) {
+            upload_registry_clone_file(&entry.job_id, file_name, local_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn delete_registry_firmware_history(job_id: &str) -> Result<(), String> {
+    let url = registry_firmware_history_url(Some(job_id), false)?;
+    let response = registry_http_client()?
+        .delete(url.clone())
+        .header("X-QA-User", registry_actor())
+        .send()
+        .map_err(|err| format!("Cannot delete shared firmware history at {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "delete shared firmware history",
+            url.as_str(),
+            response,
+        ));
+    }
+    Ok(())
+}
+
+fn download_registry_clone_file(job_id: &str) -> Result<CloneFileDownloadResult, String> {
+    let url = registry_firmware_history_url(Some(job_id), true)?;
+    let response = registry_file_http_client()?
+        .get(url.clone())
+        .send()
+        .map_err(|err| format!("Cannot download shared Clone File from {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "download shared Clone File",
+            url.as_str(),
+            response,
+        ));
+    }
+
+    let file_name = response
+        .headers()
+        .get("X-QA-File-Name")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("CloneFile-{job_id}.xml"));
+    if Path::new(&file_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        != Some(&file_name)
+    {
+        return Err("Shared Clone File name is invalid.".to_string());
+    }
+    let expected_sha256 = response
+        .headers()
+        .get("X-QA-SHA256")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| "Shared Clone File response does not contain a checksum.".to_string())?;
+    let contents = response
+        .bytes()
+        .map_err(|err| format!("Cannot read shared Clone File response: {err}"))?;
+    let actual_sha256 = format!("{:x}", Sha256::digest(&contents));
+    if actual_sha256 != expected_sha256 {
+        return Err("Shared Clone File checksum verification failed.".to_string());
+    }
+    let clone_text = String::from_utf8_lossy(&contents);
+    if !is_valid_clone_file_response(&clone_text) {
+        return Err("Shared Clone File is incomplete or invalid.".to_string());
+    }
+
+    let destination = next_available_download_path(&file_name)?;
+    fs::write(&destination, &contents).map_err(|err| {
+        format!(
+            "Cannot save Clone File to Downloads {}: {err}",
+            destination.display()
+        )
+    })?;
+    Ok(CloneFileDownloadResult {
+        file_name,
+        destination_path: destination.display().to_string(),
+    })
+}
+
+fn registry_response_error(
+    action: &str,
+    url: &str,
+    response: reqwest::blocking::Response,
+) -> String {
+    let status = response.status();
+    let body = response.text().unwrap_or_default();
+    let detail = serde_json::from_str::<Value>(&body).ok().and_then(|value| {
+        value
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    });
+    match detail {
+        Some(detail) => format!("Cannot {action} at {url}: HTTP {status}: {detail}"),
+        None => format!("Cannot {action} at {url}: HTTP {status}."),
+    }
+}
+
+fn read_registry_setting<T: DeserializeOwned>(
+    key: &str,
+) -> Result<RegistrySettingEnvelope<T>, String> {
+    let url = registry_setting_url(key);
+    let response = registry_http_client()?
+        .get(&url)
+        .send()
+        .map_err(|err| format!("Cannot read shared setting from {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "read shared setting",
+            &url,
+            response,
+        ));
+    }
+
+    let body = response
+        .text()
+        .map_err(|err| format!("Cannot read shared setting response from {url}: {err}"))?;
+    serde_json::from_str(&body)
+        .map_err(|err| format!("Shared setting response from {url} is invalid: {err}"))
+}
+
+fn save_registry_setting<T: Serialize + DeserializeOwned>(
+    key: &str,
+    value: &T,
+) -> Result<T, String> {
+    let current: RegistrySettingEnvelope<T> = read_registry_setting(key)?;
+    let request = RegistrySettingUpdate {
+        value,
+        row_version: current.row_version,
+    };
+    let body = serde_json::to_string(&request)
+        .map_err(|err| format!("Cannot serialize shared setting {key}: {err}"))?;
+    let url = registry_setting_url(key);
+    let response = registry_http_client()?
+        .put(&url)
+        .header(CONTENT_TYPE, "application/json")
+        .header("X-QA-User", registry_actor())
+        .body(body)
+        .send()
+        .map_err(|err| format!("Cannot save shared setting to {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(
+            "save shared setting",
+            &url,
+            response,
+        ));
+    }
+
+    let body = response
+        .text()
+        .map_err(|err| format!("Cannot read saved setting response from {url}: {err}"))?;
+    let saved: RegistrySettingEnvelope<T> = serde_json::from_str(&body)
+        .map_err(|err| format!("Saved setting response from {url} is invalid: {err}"))?;
+    Ok(saved.value)
+}
+
 fn read_update_safety_settings() -> Result<UpdateSafetySettings, String> {
+    match read_registry_setting::<UpdateSafetySettings>("update-safety") {
+        Ok(envelope) => {
+            let mut settings = envelope.value;
+            settings.restart_cycle_minutes = CONVERGENCE_RESTART_CYCLE_MINUTES;
+            validate_update_safety_settings(&settings)?;
+            if let Err(error) = write_local_update_safety_settings(&settings) {
+                log::warn!("Cannot refresh local Update Safety cache: {error}");
+            }
+            Ok(settings)
+        }
+        Err(error) => {
+            log::warn!("Shared Update Safety setting is unavailable; using local cache: {error}");
+            read_local_update_safety_settings()
+        }
+    }
+}
+
+fn read_local_update_safety_settings() -> Result<UpdateSafetySettings, String> {
     let path = update_safety_settings_path()?;
     if !path.is_file() {
         return Ok(UpdateSafetySettings::default());
@@ -5513,6 +5956,11 @@ fn read_update_safety_settings() -> Result<UpdateSafetySettings, String> {
 }
 
 fn write_update_safety_settings(settings: &UpdateSafetySettings) -> Result<(), String> {
+    let saved = save_registry_setting("update-safety", settings)?;
+    write_local_update_safety_settings(&saved)
+}
+
+fn write_local_update_safety_settings(settings: &UpdateSafetySettings) -> Result<(), String> {
     let path = update_safety_settings_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
@@ -5714,6 +6162,17 @@ fn ensure_update_safety_with_known_uptime(
 
 fn read_single_update_history() -> Result<Vec<FirmwareSingleUpdateHistoryEntry>, String> {
     let path = single_update_history_path()?;
+    read_firmware_history_file(&path)
+}
+
+fn read_registry_history_cache() -> Result<Vec<FirmwareSingleUpdateHistoryEntry>, String> {
+    let path = registry_history_cache_path()?;
+    read_firmware_history_file(&path)
+}
+
+fn read_firmware_history_file(
+    path: &Path,
+) -> Result<Vec<FirmwareSingleUpdateHistoryEntry>, String> {
     if !path.is_file() {
         return Ok(Vec::new());
     }
@@ -5733,13 +6192,31 @@ fn read_single_update_history() -> Result<Vec<FirmwareSingleUpdateHistoryEntry>,
 fn append_single_update_history(entry: FirmwareSingleUpdateHistoryEntry) -> Result<(), String> {
     let mut history = read_single_update_history().unwrap_or_default();
     history.retain(|existing| existing.job_id != entry.job_id);
-    history.insert(0, entry);
+    history.insert(0, entry.clone());
     history.truncate(200);
-    write_single_update_history(&history)
+    write_single_update_history(&history)?;
+    if let Err(error) = sync_registry_firmware_history_entry(&entry) {
+        log::warn!("Cannot synchronize completed firmware update: {error}");
+    }
+    Ok(())
 }
 
 fn write_single_update_history(history: &[FirmwareSingleUpdateHistoryEntry]) -> Result<(), String> {
     let path = single_update_history_path()?;
+    write_firmware_history_file(&path, history)
+}
+
+fn write_registry_history_cache(
+    history: &[FirmwareSingleUpdateHistoryEntry],
+) -> Result<(), String> {
+    let path = registry_history_cache_path()?;
+    write_firmware_history_file(&path, history)
+}
+
+fn write_firmware_history_file(
+    path: &Path,
+    history: &[FirmwareSingleUpdateHistoryEntry],
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             format!(
@@ -5756,6 +6233,22 @@ fn write_single_update_history(history: &[FirmwareSingleUpdateHistoryEntry]) -> 
             path.display()
         )
     })
+}
+
+fn merge_firmware_history(
+    primary: Vec<FirmwareSingleUpdateHistoryEntry>,
+    fallback: Vec<FirmwareSingleUpdateHistoryEntry>,
+) -> Vec<FirmwareSingleUpdateHistoryEntry> {
+    let mut seen = BTreeSet::new();
+    let mut merged = Vec::with_capacity(primary.len() + fallback.len());
+    for entry in primary.into_iter().chain(fallback) {
+        if seen.insert(entry.job_id.clone()) {
+            merged.push(entry);
+        }
+    }
+    merged.sort_by(|left, right| right.started_at.cmp(&left.started_at));
+    merged.truncate(1000);
+    merged
 }
 
 fn delete_clone_file_backup(path: &str) -> Result<(), String> {
