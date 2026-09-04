@@ -4354,6 +4354,7 @@ h2 {
 .multiple-update-status-list {
   min-height: 0;
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 8px;
   overflow: auto;
@@ -4361,6 +4362,8 @@ h2 {
 }
 
 .multiple-update-status-item {
+  min-height: 58px;
+  flex-shrink: 0;
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -4386,6 +4389,7 @@ h2 {
 
 .multiple-update-status-main {
   width: 100%;
+  min-height: 56px;
   display: grid;
   grid-template-columns: 20px minmax(150px, 1fr) minmax(150px, 0.85fr) auto;
   align-items: center;
@@ -4396,6 +4400,26 @@ h2 {
   border: 0;
   cursor: pointer;
   text-align: left;
+}
+
+.multiple-parallel-toggle {
+  min-height: 58px;
+  white-space: normal;
+}
+
+.multiple-parallel-toggle > span {
+  display: grid;
+  gap: 2px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.multiple-parallel-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .multiple-update-status-main > svg {
@@ -9577,5 +9601,171 @@ button.update-receiver-card:hover {
 
   .multiple-model-field {
     grid-column: 2;
+  }
+}
+.password-recovery-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #c93838;
+  border-left-width: 4px;
+  background: #fff0f0;
+  color: #8a1717;
+  overflow-wrap: anywhere;
+}
+
+.password-recovery-alert > svg {
+  flex: 0 0 auto;
+}
+
+.password-recovery-alert p {
+  margin: 6px 0 0;
+}
+
+.password-recovery-alert-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-recovery-alert > button {
+  flex: 0 0 auto;
+}
+
+.password-recovery-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(660px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  color: var(--heading);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-top: 4px solid #d34545;
+  border-radius: 8px;
+  box-shadow: 0 20px 70px #0006;
+  letter-spacing: 0;
+}
+
+.password-recovery-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.password-recovery-dialog::backdrop {
+  background: #141619b3;
+  backdrop-filter: blur(2px);
+}
+
+.password-recovery-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.password-recovery-dialog-header > svg {
+  flex-shrink: 0;
+  color: #d34545;
+}
+
+.password-recovery-dialog-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-recovery-dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.password-recovery-dialog-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.password-recovery-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.password-recovery-dialog-body > p {
+  margin: 0 0 16px;
+}
+
+.password-recovery-receivers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.password-recovery-receivers li {
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.password-recovery-receivers li:last-child {
+  padding-bottom: 0;
+}
+
+.password-recovery-receiver-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.password-recovery-receiver-heading span,
+.password-recovery-receivers p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.password-recovery-receivers p {
+  margin: 6px 0 0;
+}
+
+.password-recovery-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.password-recovery-sound-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .password-recovery-alert {
+    flex-wrap: wrap;
+  }
+
+  .password-recovery-dialog-header,
+  .password-recovery-dialog-body,
+  .password-recovery-dialog-footer {
+    padding: 16px;
   }
 }

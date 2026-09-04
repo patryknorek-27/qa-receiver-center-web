@@ -6,7 +6,7 @@ The application shows receiver status, helps with firmware updates, creates conf
 
 ## Application Structure
 
-<img src="docs/qa-receiver-center-architecture.png" alt="QA Receiver Center application structure" width="700">
+![QA Receiver Center application structure](./docs/qa-receiver-center-architecture.png =700x)
 
 The diagram shows the main parts of the current application.
 
@@ -69,9 +69,9 @@ More information about installation, updates, backups, tests, and the internal A
 
 ## What You Need
 
-1. Node.js 22 LTS
+1. "Node.js 22 LTS"
 2. Rust installed with rustup
-3. Microsoft C++ Build Tools with Desktop development with C++
+3. "Build Tools for Visual Studio" with "Desktop development with C++"
 4. Microsoft Edge WebView2 Runtime
 5. Access to the internal Trimble network
 6. Access to Azure DevOps, the firmware release server, and the QA Receiver Registry service
@@ -84,6 +84,10 @@ More information about installation, updates, backups, tests, and the internal A
 4. Double click "start-tauri-dev.bat" in the main repository folder.
 
 The first start installs the required JavaScript packages. The first Rust build can take several minutes. Keep the command window open until the application appears.
+
+## Troubleshooting: Node.js Not Found
+
+If you installed "Node.js" while the terminal was already open, the terminal may not see the new system paths. Close the terminal, open it again, and start the application one more time.
 
 ## Check The Application
 

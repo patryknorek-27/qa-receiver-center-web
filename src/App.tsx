@@ -14,6 +14,9 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow, type DragDropEvent } from '@tauri-apps/api/window'
 import { ModusWcNavbar, ModusWcThemeSwitcher } from '@trimble-oss/moduswebcomponents-react'
 import qaCenterIcon from './assets/qa_center_icon.png'
+import { getFirmwareWorkerCount } from './firmwareConcurrency'
+import { restoreReceiverSelection } from './firmwareSelection'
+import PasswordRecoveryAlerts from './PasswordRecoveryAlerts'
 import {
   Activity,
   AlertTriangle,
@@ -257,6 +260,7 @@ type MultipleUpdateItem = {
 type MultipleUpdateBatch = {
   batchId: string
   status: 'Running' | 'Completed' | 'Failed'
+  parallel: boolean
   sourceMode: 'release' | 'local'
   firmwareVersion: string
   targetLabel: string
@@ -999,6 +1003,8 @@ function App() {
           </div>
         </header>
 
+        <PasswordRecoveryAlerts />
+
         {activePage === 'Dashboard' && (
           <section className="metric-grid" aria-label="Fleet metrics">
             <MetricTile icon={Radio} tone="success" label="Online" value={onlineCount} />
@@ -1276,6 +1282,7 @@ function FirmwareModulePage({
   const [multipleSelectedIps, setMultipleSelectedIps] = useState<Set<string>>(new Set())
   const [multipleReceiverModels, setMultipleReceiverModels] = useState<Record<string, string>>({})
   const [multipleQuery, setMultipleQuery] = useState('')
+  const [multipleParallel, setMultipleParallel] = useState(false)
   const [multipleSourceMode, setMultipleSourceMode] = useState<'release' | 'local'>('release')
   const [multipleFirmwareFile, setMultipleFirmwareFile] = useState<SelectedFirmwareFile | null>(null)
   const [multipleFirmwareFilePath, setMultipleFirmwareFilePath] = useState('')
@@ -1291,10 +1298,16 @@ function FirmwareModulePage({
   const [newGroupSelectedIps, setNewGroupSelectedIps] = useState<Set<string>>(new Set())
   const firmwareFileInputRef = useRef<HTMLInputElement>(null)
   const multipleFirmwareFileInputRef = useRef<HTMLInputElement>(null)
+  const groupSelectionsByModeRef = useRef(new Map<string, Set<string>>())
   const reportedSingleActivityRef = useRef<Map<string, string>>(new Map())
   const reportedMultipleActivityRef = useRef('')
   const reportedGroupActivityRef = useRef('')
   const releaseCatalogRequestRef = useRef(0)
+
+  useEffect(() => {
+    if (!loadedFirmwareMode) return
+    groupSelectionsByModeRef.current.set(loadedFirmwareMode, new Set(selectedIps))
+  }, [loadedFirmwareMode, selectedIps])
 
   const selectedList = useMemo(() => Array.from(selectedIps).sort(), [selectedIps])
   const receiverStatusByIp = useMemo(() => new Map(receivers.map((receiver) => [receiver.ip, receiver])), [receivers])
@@ -1865,7 +1878,12 @@ function FirmwareModulePage({
       const config = await invoke<FirmwareConfigResponse>('get_firmware_update_config', { mode: current.mode })
       setFirmwareReceivers(config.receivers)
       setLoadedFirmwareMode(current.mode)
-      setSelectedIps(new Set(config.receivers.map((receiver) => receiver.ip)))
+      setSelectedIps(
+        restoreReceiverSelection(
+          config.receivers.map((receiver) => receiver.ip),
+          groupSelectionsByModeRef.current.get(current.mode),
+        ),
+      )
     } catch (error) {
       setFirmwareReceivers([])
       setLoadedFirmwareMode('')
@@ -1894,7 +1912,12 @@ function FirmwareModulePage({
         setReleaseCatalogErrorMode('')
         setFirmwareReceivers(config.receivers)
         setLoadedFirmwareMode(mode)
-        setSelectedIps(new Set(config.receivers.map((receiver) => receiver.ip)))
+        setSelectedIps(
+          restoreReceiverSelection(
+            config.receivers.map((receiver) => receiver.ip),
+            groupSelectionsByModeRef.current.get(mode),
+          ),
+        )
         setSelectedReleaseId('')
         setSelectedReleaseMode('')
         setBuildCatalog(null)
@@ -1992,7 +2015,12 @@ function FirmwareModulePage({
         model: newReceiverModel,
       })
       setFirmwareReceivers(config.receivers)
-      setSelectedIps(new Set(config.receivers.map((receiver) => receiver.ip)))
+      setSelectedIps((currentSelection) => {
+        const available = new Set(config.receivers.map((receiver) => receiver.ip))
+        const next = new Set(Array.from(currentSelection).filter((ip) => available.has(ip)))
+        if (available.has(newReceiverIp.trim())) next.add(newReceiverIp.trim())
+        return next
+      })
       setNewReceiverIp('')
       setNewReceiverModel('')
       setReceiverPendingModelEdit(null)
@@ -2024,7 +2052,10 @@ function FirmwareModulePage({
           appPassword: removePassword,
         })
         setFirmwareReceivers(config.receivers)
-        setSelectedIps(new Set(config.receivers.map((receiver) => receiver.ip)))
+        setSelectedIps((currentSelection) => {
+          const available = new Set(config.receivers.map((receiver) => receiver.ip))
+          return new Set(Array.from(currentSelection).filter((ip) => available.has(ip)))
+        })
         setReceiverPendingRemoval(null)
         setRemovePassword('')
         setShowRemovePassword(false)
@@ -2645,6 +2676,7 @@ function FirmwareModulePage({
     const initialBatch: MultipleUpdateBatch = {
       batchId,
       status: 'Running',
+      parallel: multipleParallel,
       sourceMode,
       firmwareVersion: sourceMode === 'release' ? standaloneSelectedReleaseId : '',
       targetLabel,
@@ -2680,7 +2712,7 @@ function FirmwareModulePage({
 
     const outcomes = new Map<string, 'Completed' | 'Failed'>()
     let cursor = 0
-    const workerCount = Math.max(1, Math.min(3 - activeSingleUpdateJobs.length, selected.length))
+    const workerCount = getFirmwareWorkerCount(multipleParallel, selected.length)
 
     const runReceiver = async (receiver: Receiver, model: string) => {
       updateMultipleBatchItem(batchId, receiver.ip, (item) => ({
@@ -2718,10 +2750,6 @@ function FirmwareModulePage({
                 })
         } catch (error) {
           const message = formatError(error)
-          if (message.includes('Maximum 3 single receiver updates')) {
-            await waitForUi(1800)
-            continue
-          }
           updateMultipleBatchItem(batchId, receiver.ip, (item) => ({
             ...item,
             status: 'Failed',
@@ -2795,11 +2823,11 @@ function FirmwareModulePage({
     )
     setIsMultipleUpdateStarting(false)
   }, [
-    activeSingleUpdateJobs.length,
     multipleFirmwareFile,
     multipleFirmwareFilePath,
     multipleCatalogPackages,
     multipleReceiverModels,
+    multipleParallel,
     multipleSelectedReceivers,
     multipleSourceMode,
     standaloneReleaseInspection?.buildName,
@@ -2877,10 +2905,22 @@ function FirmwareModulePage({
   const multipleCompletedCount =
     multipleBatch?.items.filter((item) => item.status === 'Completed').length || 0
   const multipleFailedCount = multipleBatch?.items.filter((item) => item.status === 'Failed').length || 0
+  const multipleQueuedCount = multipleBatch?.items.filter((item) => item.status === 'Queued').length || 0
+  const multipleActiveCount =
+    multipleBatch?.items.filter((item) => item.status === 'Starting' || item.status === 'Running').length || 0
   const canDismissMultipleBatch = multipleBatch?.status === 'Completed' || multipleBatch?.status === 'Failed'
   const groupCompletedCount = jobStatus?.receivers.filter((receiver) => receiver.status === 'Completed').length || 0
   const groupFailedCount = jobStatus?.receivers.filter((receiver) => receiver.status === 'Failed').length || 0
   const groupCancelledCount = jobStatus?.receivers.filter((receiver) => receiver.status === 'Cancelled').length || 0
+  const groupQueuedCount = jobStatus?.receivers.filter((receiver) => receiver.phase === 'Queued').length || 0
+  const groupActiveCount =
+    jobStatus?.receivers.filter(
+      (receiver) =>
+        receiver.phase !== 'Queued' &&
+        receiver.status !== 'Completed' &&
+        receiver.status !== 'Failed' &&
+        receiver.status !== 'Cancelled',
+    ).length || 0
   const canDismissGroupJob =
     jobStatus?.status === 'Completed' || jobStatus?.status === 'Failed' || jobStatus?.status === 'Cancelled'
 
@@ -3831,6 +3871,19 @@ function FirmwareModulePage({
                 <p className="credentials-error">Select a valid model for every selected receiver.</p>
               )}
 
+              <label className="firmware-toggle multiple-parallel-toggle">
+                <input
+                  type="checkbox"
+                  checked={multipleParallel}
+                  onChange={(event) => setMultipleParallel(event.target.checked)}
+                  disabled={hasRunningMultipleBatch}
+                />
+                <span>
+                  <strong>Parallel mode</strong>
+                  <small>Start up to 25 selected receivers at the same time.</small>
+                </span>
+              </label>
+
               <button
                 className="primary-button full-width"
                 type="button"
@@ -4264,7 +4317,13 @@ function FirmwareModulePage({
                   </div>
                   <div className="group-update-review-row" role="listitem">
                     <span>Processing mode</span>
-                    <strong>{parallel ? `Up to ${Math.min(3, selectedIps.size)} receivers` : 'One receiver at a time'}</strong>
+                    <strong>
+                      {parallel
+                        ? getFirmwareWorkerCount(true, selectedIps.size) === selectedIps.size
+                          ? `${selectedIps.size} selected receivers at the same time`
+                          : `${getFirmwareWorkerCount(true, selectedIps.size)} of ${selectedIps.size} selected receivers at the same time`
+                        : 'One receiver at a time'}
+                    </strong>
                   </div>
                 </div>
 
@@ -4569,6 +4628,8 @@ function FirmwareModulePage({
                       <p>
                         {activeSingleUpdateJob.status === 'Completed'
                           ? 'Receiver is online and the configured password has been restored.'
+                          : activeSingleUpdateJob.status === 'Failed' || activeSingleUpdateJob.status === 'Cancelled'
+                            ? activeSingleUpdateJob.message
                           : isFirmwareWorkflowMilestone(activeSingleUpdateJob.phase)
                             ? activeSingleUpdateJob.message
                             : activeSingleUpdateJob.updateMode || activeSingleUpdateJob.fwStatus
@@ -4699,7 +4760,9 @@ function FirmwareModulePage({
                           </span>
                           <h3>
                             {multipleBatch.status === 'Running'
-                              ? 'Receiver update queue is active'
+                              ? multipleBatch.parallel
+                                ? `${getFirmwareWorkerCount(true, multipleBatch.items.length)} receiver updates run in parallel`
+                                : 'Receiver update queue is active'
                               : multipleBatch.status === 'Completed'
                                 ? 'All receiver updates completed'
                                 : 'Multiple update finished with errors'}
@@ -4713,9 +4776,8 @@ function FirmwareModulePage({
                       <div className="multiple-update-counters">
                         <span>{multipleCompletedCount} completed</span>
                         <span>{multipleFailedCount} failed</span>
-                        <span>
-                          {multipleBatch.items.length - multipleCompletedCount - multipleFailedCount} active / queued
-                        </span>
+                        <span>{multipleActiveCount} active</span>
+                        <span>{multipleQueuedCount} queued</span>
                       </div>
                     </div>
 
@@ -4730,6 +4792,8 @@ function FirmwareModulePage({
                             <button
                               type="button"
                               className="multiple-update-status-main"
+                              aria-expanded={expanded}
+                              title={expanded ? 'Hide receiver details' : 'Show receiver details'}
                               onClick={() =>
                                 setExpandedMultipleIps((current) => {
                                   const next = new Set(current)
@@ -4869,7 +4933,9 @@ function FirmwareModulePage({
                                   ? 'Group update was cancelled and receiver reservations were released'
                                 : jobStatus.status === 'Cancelling'
                                   ? 'Stopping safely and restoring passwords'
-                                  : 'Group receiver queue is active'}
+                                  : jobStatus.parallel
+                                    ? `${getFirmwareWorkerCount(true, jobStatus.receivers.length)} receiver updates run in parallel`
+                                    : 'Group receiver queue is active'}
                           </h3>
                         </div>
                         <strong>{formatProgressPercent(jobStatus.progress)}</strong>
@@ -4881,10 +4947,8 @@ function FirmwareModulePage({
                         <span>{groupCompletedCount} completed</span>
                         <span>{groupCancelledCount} cancelled</span>
                         <span>{groupFailedCount} failed</span>
-                        <span>
-                          {jobStatus.receivers.length - groupCompletedCount - groupCancelledCount - groupFailedCount}{' '}
-                          active / queued
-                        </span>
+                        <span>{groupActiveCount} active</span>
+                        <span>{groupQueuedCount} queued</span>
                       </div>
                     </div>
 
@@ -4896,6 +4960,8 @@ function FirmwareModulePage({
                             <button
                               type="button"
                               className="multiple-update-status-main"
+                              aria-expanded={expanded}
+                              title={expanded ? 'Hide receiver details' : 'Show receiver details'}
                               onClick={() =>
                                 setExpandedGroupIps((current) => {
                                   const next = new Set(current)

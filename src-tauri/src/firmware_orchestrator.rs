@@ -88,7 +88,7 @@ impl FirmwareOrchestrator {
                     .to_string(),
             );
         }
-        if reservation.kind == FirmwareJobKind::Single
+        if reservation.kind != FirmwareJobKind::Group
             && state
                 .jobs
                 .values()
@@ -428,6 +428,17 @@ mod tests {
 
         assert!(orchestrator
             .reserve(FirmwareJobReservation::single("single-2", "10.2.155.30"), 3)
+            .is_err());
+        assert!(orchestrator
+            .reserve(
+                FirmwareJobReservation {
+                    job_id: "multiple-1".to_string(),
+                    kind: FirmwareJobKind::Multiple,
+                    receiver_ips: vec!["10.2.155.31".to_string()],
+                    max_parallel_receivers: 1,
+                },
+                usize::MAX,
+            )
             .is_err());
         drop(group);
     }

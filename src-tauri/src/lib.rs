@@ -1,4 +1,6 @@
 mod firmware_orchestrator;
+mod password_recovery_notices;
+mod receiver_password;
 
 use firmware_orchestrator::{
     FirmwareJobControl, FirmwareJobKind, FirmwareJobLease, FirmwareJobReservation,
@@ -28,9 +30,8 @@ const DEFAULT_WORKERS: usize = 12;
 const DEFAULT_INTERFACE_ZOOM: f64 = 0.94;
 const MAX_SINGLE_FIRMWARE_JOBS: usize = 3;
 const MAX_GROUP_FIRMWARE_JOBS: usize = 1;
-const MAX_GROUP_PARALLEL_RECEIVERS: usize = 3;
-const PASSWORD_RESTORE_ATTEMPTS: usize = 12;
-const PASSWORD_RESTORE_RETRY_SECONDS: u64 = 5;
+const MAX_PARALLEL_FIRMWARE_RECEIVERS: usize = 25;
+const MAX_PASSWORD_RECOVERY_PARALLEL_RECEIVERS: usize = 3;
 const CONVERGENCE_RESTART_CYCLE_MINUTES: u32 = 30;
 const DEFAULT_POST_RESTART_DELAY_MINUTES: u32 = 2;
 const DEFAULT_PRE_RESTART_SAFETY_MARGIN_MINUTES: u32 = 10;
@@ -53,6 +54,37 @@ const INSTALL_MARKERS: [&str; 2] = [
     "Installing firmware from failsafe region",
     "Installing failsafe copy of firmware",
 ];
+
+fn receiver_concurrency(parallel: bool, receiver_count: usize) -> usize {
+    if parallel {
+        receiver_count.clamp(1, MAX_PARALLEL_FIRMWARE_RECEIVERS)
+    } else {
+        1
+    }
+}
+
+fn single_or_multiple_reservation(
+    job_id: &str,
+    receiver_ip: &str,
+    batch_id: Option<&str>,
+) -> (FirmwareJobReservation, usize) {
+    if batch_id.is_some_and(|value| value.starts_with("multiple-fw-")) {
+        (
+            FirmwareJobReservation {
+                job_id: job_id.to_string(),
+                kind: FirmwareJobKind::Multiple,
+                receiver_ips: vec![receiver_ip.to_string()],
+                max_parallel_receivers: 1,
+            },
+            usize::MAX,
+        )
+    } else {
+        (
+            FirmwareJobReservation::single(job_id, receiver_ip),
+            MAX_SINGLE_FIRMWARE_JOBS,
+        )
+    }
+}
 
 #[derive(Clone)]
 struct ReceiverCredential {
@@ -548,10 +580,11 @@ fn load_receivers_config() -> Result<Vec<ReceiverSummary>, String> {
 }
 
 #[tauri::command]
-async fn scan_receivers() -> Result<Vec<ReceiverSummary>, String> {
+async fn scan_receivers(state: State<'_, FirmwareJobs>) -> Result<Vec<ReceiverSummary>, String> {
+    let single_jobs = Arc::clone(&state.single_jobs);
     tauri::async_runtime::spawn_blocking(move || {
         let receivers = read_receivers(GROUPS_JSON_PATH)?;
-        Ok(scan_all(receivers))
+        Ok(scan_all(receivers, &single_jobs))
     })
     .await
     .map_err(|err| format!("Receiver scan failed: {err}"))?
@@ -769,10 +802,12 @@ fn start_single_release_firmware_update_job(
     let receiver = resolve_single_firmware_receiver(&request, false)?;
     ensure_update_safety_for_receivers(std::slice::from_ref(&receiver))?;
     let job_id = format!("single-fw-{}", now_millis());
-    let lease = state.orchestrator.reserve(
-        FirmwareJobReservation::single(&job_id, &receiver.credential.addr),
-        MAX_SINGLE_FIRMWARE_JOBS,
-    )?;
+    let (reservation, job_limit) = single_or_multiple_reservation(
+        &job_id,
+        &receiver.credential.addr,
+        request.batch_id.as_deref(),
+    );
+    let lease = state.orchestrator.reserve(reservation, job_limit)?;
     let initial = create_single_update_job_status(
         &job_id,
         &receiver,
@@ -798,10 +833,33 @@ fn start_single_release_firmware_update_job(
 
 #[tauri::command]
 async fn start_single_local_firmware_update(
+    state: State<'_, FirmwareJobs>,
     request: FirmwareSingleLocalUpdateRequest,
 ) -> Result<FirmwareSingleDryRunResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        start_single_local_firmware_update_blocking(request)
+    let single_jobs = Arc::clone(&state.single_jobs);
+    let target_url = format!("local://{}", request.local_file_name.trim());
+    let initial = start_single_local_firmware_update_job(state, request)?;
+    tauri::async_runtime::spawn_blocking(move || loop {
+        let job = single_jobs
+            .lock()
+            .map_err(|_| "Firmware job store is unavailable.")?
+            .get(&initial.job_id)
+            .cloned()
+            .ok_or("Firmware job is unavailable.")?;
+        if job.completed_at.is_some() {
+            return Ok(FirmwareSingleDryRunResult {
+                ip: job.ip,
+                model: job.model,
+                target_file: job.target_file,
+                target_url,
+                receiver_name: job.receiver_name,
+                firmware_version: job.firmware_version,
+                uptime_seconds: job.uptime_seconds,
+                status: job.status,
+                steps: job.steps,
+            });
+        }
+        thread::sleep(Duration::from_millis(250));
     })
     .await
     .map_err(|err| format!("Single receiver local update failed: {err}"))?
@@ -833,10 +891,12 @@ fn start_single_local_firmware_update_job(
     let receiver = resolve_single_firmware_receiver(&dry_request, true)?;
     ensure_update_safety_for_receivers(std::slice::from_ref(&receiver))?;
     let job_id = format!("single-fw-{}", now_millis());
-    let lease = state.orchestrator.reserve(
-        FirmwareJobReservation::single(&job_id, &receiver.credential.addr),
-        MAX_SINGLE_FIRMWARE_JOBS,
-    )?;
+    let (reservation, job_limit) = single_or_multiple_reservation(
+        &job_id,
+        &receiver.credential.addr,
+        request.batch_id.as_deref(),
+    );
+    let lease = state.orchestrator.reserve(reservation, job_limit)?;
     let initial = create_single_update_job_status(
         &job_id,
         &receiver,
@@ -1085,12 +1145,89 @@ fn download_clone_file_backup(path: String) -> Result<CloneFileDownloadResult, S
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PasswordRecoveryAlert {
+    ip: String,
+    job_id: String,
+    message: String,
+    receiver_name: Option<String>,
+    model: Option<String>,
+}
+
+fn visible_password_recovery_notices(
+    notices: Vec<password_recovery_notices::PasswordRecoveryNotice>,
+    jobs: &HashMap<String, FirmwareSingleUpdateJobStatus>,
+) -> Vec<PasswordRecoveryAlert> {
+    notices
+        .into_iter()
+        .filter(|notice| {
+            !jobs
+                .get(&notice.job_id)
+                .is_some_and(|job| job.completed_at.is_none())
+        })
+        .map(|notice| {
+            let job = jobs.get(&notice.job_id);
+            PasswordRecoveryAlert {
+                ip: notice.ip,
+                job_id: notice.job_id,
+                message: job
+                    .and_then(password_recovery_error)
+                    .unwrap_or(notice.message),
+                receiver_name: job.and_then(|job| job.receiver_name.clone()),
+                model: job.map(|job| job.model.clone()),
+            }
+        })
+        .collect()
+}
+
 #[tauri::command]
-fn restore_receiver_password(receiver_ip: String) -> Result<PasswordRestoreResult, String> {
+fn get_password_recovery_notices(
+    state: State<'_, FirmwareJobs>,
+) -> Result<Vec<PasswordRecoveryAlert>, String> {
+    let notices = password_recovery_notices::read()?;
+    let jobs = state
+        .single_jobs
+        .lock()
+        .map_err(|_| "Firmware job store is unavailable.")?;
+    Ok(visible_password_recovery_notices(notices, &jobs))
+}
+
+#[tauri::command]
+fn play_password_recovery_sound(
+    state: State<'_, FirmwareJobs>,
+    notice_ids: Vec<password_recovery_notices::PasswordRecoveryNoticeId>,
+) -> Result<bool, String> {
+    let current = get_password_recovery_notices(state)?
+        .into_iter()
+        .map(
+            |notice| password_recovery_notices::PasswordRecoveryNoticeId {
+                ip: notice.ip,
+                job_id: notice.job_id,
+            },
+        )
+        .collect::<Vec<_>>();
+    password_recovery_notices::play_sound_once(&notice_ids, &current)
+}
+
+#[tauri::command]
+fn restore_receiver_password(
+    state: State<'_, FirmwareJobs>,
+    receiver_ip: String,
+) -> Result<PasswordRestoreResult, String> {
     let ip = receiver_ip.trim();
     if ip.parse::<Ipv4Addr>().is_err() {
         return Err(format!("Invalid receiver IP: {ip}"));
     }
+
+    let _lease = state.orchestrator.reserve(
+        FirmwareJobReservation::single(format!("password-recovery-{}", now_millis()), ip),
+        MAX_SINGLE_FIRMWARE_JOBS,
+    )?;
+    let access = receiver_password::operation_lock(ip)?;
+    let _access = access
+        .try_lock()
+        .map_err(|_| "This receiver is busy. Wait before restoring its password.")?;
 
     let receiver = read_receivers(GROUPS_JSON_PATH)?
         .into_iter()
@@ -1098,23 +1235,17 @@ fn restore_receiver_password(receiver_ip: String) -> Result<PasswordRestoreResul
         .ok_or_else(|| format!("Receiver credentials not found for {ip}"))?;
     let temp_password = firmware_temp_password()?;
 
-    if verify_receiver_password(&receiver, &receiver.pw).is_ok() {
-        return Ok(PasswordRestoreResult {
-            ip: receiver.addr,
-            status: "AlreadyRestored".to_string(),
-            message: "Receiver already accepts the configured qa-receivers.json password."
-                .to_string(),
-            restored_at: now_seconds(),
-        });
-    }
-
+    password_recovery_notices::arm(&receiver.addr, &format!("manual-password-{}", now_millis()))?;
     match restore_receiver_password_with_retry(&receiver, &temp_password) {
-        Ok(()) => Ok(PasswordRestoreResult {
-            ip: receiver.addr,
-            status: "Completed".to_string(),
-            message: "Receiver password restored from qa-receivers.json.".to_string(),
-            restored_at: now_seconds(),
-        }),
+        Ok(()) => {
+            password_recovery_notices::clear(&receiver.addr)?;
+            Ok(PasswordRestoreResult {
+                ip: receiver.addr,
+                status: "Completed".to_string(),
+                message: "Receiver password restored from qa-receivers.json.".to_string(),
+                restored_at: now_seconds(),
+            })
+        }
         Err(change_error) => Err(format!(
             "Password restore failed for {}: {}",
             receiver.addr, change_error
@@ -1140,6 +1271,15 @@ async fn force_restore_firmware_job_passwords(
             .map(|receiver| (receiver.ip.clone(), receiver.child_job_id.clone()))
             .collect::<Vec<_>>()
     };
+    let recovery_lease = state.orchestrator.reserve(
+        FirmwareJobReservation {
+            job_id: format!("password-recovery-{}", now_millis()),
+            kind: FirmwareJobKind::Multiple,
+            receiver_ips: receiver_jobs.iter().map(|(ip, _)| ip.clone()).collect(),
+            max_parallel_receivers: MAX_PASSWORD_RECOVERY_PARALLEL_RECEIVERS,
+        },
+        1,
+    )?;
     let receiver_phases = state
         .single_jobs
         .lock()
@@ -1161,6 +1301,7 @@ async fn force_restore_firmware_job_passwords(
     let worker_job_id = job_id.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let _lease = recovery_lease;
         force_restore_firmware_job_passwords_blocking(group_jobs, worker_job_id, receivers)
     })
     .await
@@ -1267,15 +1408,25 @@ fn force_restore_receiver_password(
     temporary_password: &str,
     phase: &str,
 ) -> PasswordRestoreResult {
-    if verify_receiver_password(receiver, &receiver.pw).is_ok() {
+    let access = match receiver_password::operation_lock(&receiver.addr) {
+        Ok(access) => access,
+        Err(error) => {
+            return PasswordRestoreResult {
+                ip: receiver.addr.clone(),
+                status: "Failed".into(),
+                message: error,
+                restored_at: now_seconds(),
+            }
+        }
+    };
+    let Ok(_access) = access.try_lock() else {
         return PasswordRestoreResult {
             ip: receiver.addr.clone(),
-            status: "AlreadyRestored".to_string(),
-            message: "Receiver already accepts the configured password.".to_string(),
+            status: "Deferred".into(),
+            message: "Receiver is busy. Password recovery was deferred.".into(),
             restored_at: now_seconds(),
         };
-    }
-
+    };
     if phase == "ChangePassword" || phase == "UploadFirmware" {
         return PasswordRestoreResult {
             ip: receiver.addr.clone(),
@@ -1306,7 +1457,13 @@ fn force_restore_receiver_password(
         }
     }
 
-    match restore_receiver_password_with_retry(receiver, temporary_password) {
+    match password_recovery_notices::arm(
+        &receiver.addr,
+        &format!("manual-password-{}", now_millis()),
+    )
+    .and_then(|()| restore_receiver_password_with_retry(receiver, temporary_password))
+    .and_then(|()| password_recovery_notices::clear(&receiver.addr))
+    {
         Ok(()) => PasswordRestoreResult {
             ip: receiver.addr.clone(),
             status: "Completed".to_string(),
@@ -1348,11 +1505,7 @@ fn start_firmware_update_job(
     ensure_update_safety_for_receivers(&receivers)?;
 
     let job_id = format!("group-fw-{}", now_millis());
-    let max_parallel_receivers = if request.parallel {
-        MAX_GROUP_PARALLEL_RECEIVERS.min(receivers.len()).max(1)
-    } else {
-        1
-    };
+    let max_parallel_receivers = receiver_concurrency(request.parallel, receivers.len());
     let lease = state.orchestrator.reserve(
         FirmwareJobReservation {
             job_id: job_id.clone(),
@@ -2914,249 +3067,6 @@ fn dry_run_single_firmware_update_blocking(
     })
 }
 
-fn start_single_local_firmware_update_blocking(
-    request: FirmwareSingleLocalUpdateRequest,
-) -> Result<FirmwareSingleDryRunResult, String> {
-    let file_path = Path::new(request.local_file_path.trim());
-    if !file_path.is_file() {
-        return Err("Local firmware package path is not readable.".to_string());
-    }
-
-    let file_name = request.local_file_name.trim();
-    validate_local_firmware_file_name(file_name)?;
-
-    let dry_request = FirmwareSingleUpdateRequest {
-        mode: "Auto".to_string(),
-        batch_id: request.batch_id.clone(),
-        receiver_ip: request.receiver_ip,
-        receiver_model: request.receiver_model,
-        firmware_version: String::new(),
-        firmware_suffix: String::new(),
-        package_file: None,
-        source_mode: Some("local".to_string()),
-        local_file_name: Some(file_name.to_string()),
-    };
-    let receiver = resolve_single_firmware_receiver(&dry_request, true)?;
-    let mut steps = Vec::new();
-    push_workflow_step(
-        &mut steps,
-        "Queued",
-        "Completed",
-        "Single receiver local package update started.",
-    );
-
-    let receiver_client = Client::builder()
-        .timeout(Duration::from_secs(8))
-        .connect_timeout(Duration::from_secs(4))
-        .build()
-        .map_err(|err| format!("HTTP client error: {err}"))?;
-    let preflight = preflight_firmware_receiver(&receiver_client, &receiver);
-    let receiver_name = preflight.receiver_name.clone();
-    let firmware_version = preflight.firmware_version.clone();
-    let uptime_seconds = preflight.uptime_seconds;
-    push_workflow_step(
-        &mut steps,
-        "Preflight",
-        if preflight.can_update {
-            "Completed"
-        } else {
-            "Failed"
-        },
-        &preflight.message,
-    );
-
-    if !preflight.can_update {
-        return Ok(FirmwareSingleDryRunResult {
-            ip: receiver.credential.addr,
-            model: receiver.model,
-            target_file: receiver.target_file,
-            target_url: receiver.target_url,
-            receiver_name,
-            firmware_version,
-            uptime_seconds,
-            status: "Failed".to_string(),
-            steps,
-        });
-    }
-
-    push_workflow_step(
-        &mut steps,
-        "UpdateSafety",
-        "Running",
-        "Checking the configured convergence restart window.",
-    );
-    match ensure_update_safety_with_known_uptime(&receiver.credential.addr, uptime_seconds) {
-        Ok(evaluation) => {
-            push_workflow_step(&mut steps, "UpdateSafety", "Completed", &evaluation.message)
-        }
-        Err(error) => {
-            push_workflow_step(&mut steps, "UpdateSafety", "Failed", &error);
-            return Ok(FirmwareSingleDryRunResult {
-                ip: receiver.credential.addr,
-                model: receiver.model,
-                target_file: receiver.target_file,
-                target_url: receiver.target_url,
-                receiver_name,
-                firmware_version,
-                uptime_seconds,
-                status: "Failed".to_string(),
-                steps,
-            });
-        }
-    }
-
-    let temp_password = firmware_temp_password()?;
-    let mut final_status = "Completed".to_string();
-
-    push_workflow_step(
-        &mut steps,
-        "ChangePassword",
-        "Running",
-        "Changing receiver password to temporary firmware update password.",
-    );
-    match change_receiver_password(
-        &receiver.credential,
-        &receiver.credential.pw,
-        &temp_password,
-    ) {
-        Ok(()) => {
-            push_workflow_step(
-                &mut steps,
-                "ChangePassword",
-                "Completed",
-                "Temporary password is active for firmware upload.",
-            );
-        }
-        Err(err) => {
-            push_workflow_step(&mut steps, "ChangePassword", "Failed", &err);
-            return Ok(FirmwareSingleDryRunResult {
-                ip: receiver.credential.addr,
-                model: receiver.model,
-                target_file: receiver.target_file,
-                target_url: receiver.target_url,
-                receiver_name,
-                firmware_version,
-                uptime_seconds,
-                status: "Failed".to_string(),
-                steps,
-            });
-        }
-    }
-
-    push_workflow_step(
-        &mut steps,
-        "UploadFirmware",
-        "Running",
-        "Uploading local firmware package to receiver failsafe region.",
-    );
-    let upload_result =
-        upload_local_firmware_package(&receiver.credential, file_path, file_name, &temp_password);
-    match upload_result {
-        Ok(()) => push_workflow_step(
-            &mut steps,
-            "UploadFirmware",
-            "Completed",
-            "Firmware package upload request completed.",
-        ),
-        Err(err) => {
-            final_status = "Failed".to_string();
-            push_workflow_step(&mut steps, "UploadFirmware", "Failed", &err);
-        }
-    }
-
-    if final_status == "Completed" {
-        push_workflow_step(
-            &mut steps,
-            "WaitForInstall",
-            "Running",
-            "Waiting for firmware install and receiver reboot to finish.",
-        );
-        match wait_for_receiver_install(&receiver.credential, &temp_password) {
-            Ok(()) => push_workflow_step(
-                &mut steps,
-                "WaitForInstall",
-                "Completed",
-                "Receiver returned after firmware install cycle.",
-            ),
-            Err(err) => {
-                final_status = "Failed".to_string();
-                push_workflow_step(&mut steps, "WaitForInstall", "Failed", &err);
-            }
-        }
-    } else {
-        push_workflow_step(
-            &mut steps,
-            "WaitForInstall",
-            "Skipped",
-            "Upload did not complete, install wait was skipped.",
-        );
-    }
-
-    push_workflow_step(
-        &mut steps,
-        "RestorePassword",
-        "Running",
-        "Restoring receiver password from receiver configuration.",
-    );
-    match change_receiver_password(
-        &receiver.credential,
-        &temp_password,
-        &receiver.credential.pw,
-    ) {
-        Ok(()) => push_workflow_step(
-            &mut steps,
-            "RestorePassword",
-            "Completed",
-            "Receiver password was restored to the configured value.",
-        ),
-        Err(err) => {
-            final_status = "Failed".to_string();
-            push_workflow_step(&mut steps, "RestorePassword", "Failed", &err);
-        }
-    }
-
-    if final_status == "Completed" {
-        let verify_client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .connect_timeout(Duration::from_secs(4))
-            .build()
-            .map_err(|err| format!("HTTP client error: {err}"))?;
-        let verify = preflight_firmware_receiver(&verify_client, &receiver);
-        push_workflow_step(
-            &mut steps,
-            "VerifyResult",
-            if verify.can_update {
-                "Completed"
-            } else {
-                "Warning"
-            },
-            &format!(
-                "Receiver reachable after update. Current firmware: {}.",
-                verify.firmware_version.as_deref().unwrap_or("unknown")
-            ),
-        );
-    } else {
-        push_workflow_step(
-            &mut steps,
-            "VerifyResult",
-            "Skipped",
-            "Update did not complete cleanly, verification was skipped.",
-        );
-    }
-
-    Ok(FirmwareSingleDryRunResult {
-        ip: receiver.credential.addr,
-        model: receiver.model,
-        target_file: receiver.target_file,
-        target_url: receiver.target_url,
-        receiver_name,
-        firmware_version,
-        uptime_seconds,
-        status: final_status,
-        steps,
-    })
-}
-
 fn run_single_local_firmware_update_job(
     single_jobs: Arc<Mutex<HashMap<String, FirmwareSingleUpdateJobStatus>>>,
     lease: FirmwareJobLease,
@@ -3281,6 +3191,11 @@ fn run_single_local_firmware_update_job_inner(
     request: FirmwareSingleLocalUpdateRequest,
 ) -> Result<(), String> {
     ensure_firmware_job_not_cancelled(control)?;
+    let access = receiver_password::operation_lock(request.receiver_ip.trim())?;
+    let _access = access
+        .lock()
+        .map_err(|_| "Receiver operation lock is unavailable.")?;
+    password_recovery_notices::ensure_ready(request.receiver_ip.trim())?;
     let file_path = Path::new(request.local_file_path.trim());
     if !file_path.is_file() {
         return Err("Local firmware package path is not readable.".to_string());
@@ -3301,6 +3216,8 @@ fn run_single_local_firmware_update_job_inner(
         local_file_name: Some(file_name.clone()),
     };
     let receiver = resolve_single_firmware_receiver(&dry_request, true)?;
+
+    check_initial_firmware_password(single_jobs, job_id, &receiver.credential)?;
 
     update_single_job_step(
         single_jobs,
@@ -3459,6 +3376,43 @@ fn run_single_local_firmware_update_job_inner(
     }
 
     let temp_password = firmware_temp_password()?;
+    let recovery_receiver = receiver.credential.clone();
+    let recovery_temp_password = temp_password.clone();
+    let recovery_jobs = Arc::clone(single_jobs);
+    let recovery_job_id = job_id.to_string();
+    password_recovery_notices::arm(&receiver.credential.addr, job_id)?;
+    // Arm recovery before the write: a timeout may hide a successful password change.
+    let mut password_recovery = PasswordRecoveryGuard::new(move || {
+        update_single_job_step(
+            &recovery_jobs,
+            &recovery_job_id,
+            "RestorePassword",
+            "Running",
+            "Running",
+            "Restoring and verifying the configured receiver password.",
+        );
+        let result = restore_receiver_password_with_retry(&recovery_receiver, &recovery_temp_password)
+            .and_then(|()| password_recovery_notices::clear(&recovery_receiver.addr).map_err(|error| {
+                format!("PASSWORD RECOVERY REQUIRED for {}. The password was verified, but the recovery record could not be cleared: {error}", recovery_receiver.addr)
+            }));
+        update_single_job_step(
+            &recovery_jobs,
+            &recovery_job_id,
+            "RestorePassword",
+            if result.is_ok() {
+                "Completed"
+            } else {
+                "Failed"
+            },
+            "Running",
+            result
+                .as_ref()
+                .err()
+                .map(String::as_str)
+                .unwrap_or("Configured receiver password restored and verified."),
+        );
+        result
+    });
     update_single_job_step(
         single_jobs,
         job_id,
@@ -3489,16 +3443,13 @@ fn run_single_local_firmware_update_job_inner(
                 "Failed",
                 &err,
             );
-            complete_single_job(single_jobs, job_id, "Failed", &err);
+            let recovery_result = password_recovery.restore_now();
+            let message = recovery_result.err().unwrap_or(err);
+            complete_single_job(single_jobs, job_id, "Failed", &message);
             return Ok(());
         }
     }
 
-    let recovery_receiver = receiver.credential.clone();
-    let recovery_temp_password = temp_password.clone();
-    let mut password_recovery = PasswordRecoveryGuard::new(move || {
-        restore_receiver_password_with_retry(&recovery_receiver, &recovery_temp_password)
-    });
     ensure_firmware_job_not_cancelled(control)?;
 
     update_single_job_step(
@@ -3658,6 +3609,9 @@ fn run_single_local_firmware_update_job_inner(
             .build()
             .map_err(|err| format!("HTTP client error: {err}"))?;
         let verify = preflight_firmware_receiver(&verify_client, &receiver);
+        if !verify.can_update {
+            final_status = "Failed".to_string();
+        }
         update_single_job_metadata(
             single_jobs,
             job_id,
@@ -3672,13 +3626,10 @@ fn run_single_local_firmware_update_job_inner(
             if verify.can_update {
                 "Completed"
             } else {
-                "Warning"
+                "Failed"
             },
-            "Completed",
-            &format!(
-                "Receiver reachable after update. Current firmware: {}.",
-                verify.firmware_version.as_deref().unwrap_or("unknown")
-            ),
+            "Running",
+            &verify.message,
         );
     } else {
         update_single_job_step(
@@ -4321,7 +4272,11 @@ fn is_receiver_installing_firmware_with_password(
         })?;
 
     if !response.status().is_success() {
-        return Ok(false);
+        return Err(format!(
+            "HTTP {} for {}",
+            response.status().as_u16(),
+            rx.addr
+        ));
     }
 
     let text = response.text().map_err(|err| {
@@ -4353,125 +4308,61 @@ fn validate_application_password(candidate: &str) -> Result<(), String> {
     }
 }
 
+fn check_initial_firmware_password(
+    single_jobs: &Arc<Mutex<HashMap<String, FirmwareSingleUpdateJobStatus>>>,
+    job_id: &str,
+    rx: &ReceiverCredential,
+) -> Result<(), String> {
+    update_single_job_step(single_jobs, job_id, "CheckPassword", "Running", "Running",
+        "Checking the configured password using the receiver login form. No password change has been sent.");
+    match verify_receiver_password(rx, &rx.pw) {
+        Ok(()) => {
+            update_single_job_step(single_jobs, job_id, "CheckPassword", "Completed", "Running",
+                "Receiver login accepted the configured password. No password change has been sent.");
+            Ok(())
+        }
+        Err(error) => {
+            let message = format!("Update stopped before the password change for {}. No password change or firmware upload was sent by this job. {error}", rx.addr);
+            update_single_job_step(
+                single_jobs,
+                job_id,
+                "CheckPassword",
+                "Failed",
+                "Running",
+                &message,
+            );
+            Err(message)
+        }
+    }
+}
+
 fn change_receiver_password(
     rx: &ReceiverCredential,
     current_password: &str,
     new_password: &str,
 ) -> Result<(), String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .connect_timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|err| format!("HTTP client error: {err}"))?;
-    let response = client
-        .get(format!("http://{}/cgi-bin/security_passwd.xml", rx.addr))
-        .basic_auth(&rx.user, Some(current_password))
-        .query(&[
-            ("t", now_seconds()),
-            ("CurrentPassword", current_password.to_string()),
-            ("Username", rx.user.clone()),
-            ("NewPassword", new_password.to_string()),
-            ("NewPassword2", new_password.to_string()),
-        ])
-        .send()
-        .map_err(|err| {
-            format!(
-                "Cannot change password for {}: {}",
-                rx.addr,
-                clean_error(err)
-            )
-        })?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!(
-            "Cannot change password for {}: HTTP {}.",
-            rx.addr,
-            status.as_u16()
-        ));
-    }
-
-    let text = response.text().map_err(|err| {
-        format!(
-            "Cannot read password change response from {}: {}",
-            rx.addr,
-            clean_error(err)
-        )
-    })?;
-    let doc = roxmltree::Document::parse(&text)
-        .map_err(|err| format!("Invalid password change response from {}: {err}", rx.addr))?;
-    match select_text(&doc, "OK").as_deref() {
-        Some("1") => Ok(()),
-        _ => Err(format!("Receiver {} rejected password change.", rx.addr)),
-    }
+    receiver_password::change(rx, current_password, new_password)
 }
 
 fn activate_temporary_firmware_password(
     rx: &ReceiverCredential,
     temporary_password: &str,
 ) -> Result<bool, String> {
-    if verify_receiver_password(rx, &rx.pw).is_ok() {
-        if rx.pw == temporary_password {
-            return Ok(false);
-        }
-
-        change_receiver_password(rx, &rx.pw, temporary_password)?;
-        if let Err(verify_error) = verify_receiver_password(rx, temporary_password) {
-            let recovery_result = restore_receiver_password_with_retry(rx, temporary_password);
-            return Err(match recovery_result {
-                Ok(()) => format!(
-                    "Receiver {} did not accept the temporary password after reporting success. The configured password was restored. {}",
-                    rx.addr, verify_error
-                ),
-                Err(recovery_error) => format!(
-                    "Receiver {} did not accept the temporary password after reporting success, and automatic recovery failed. {} Recovery error: {}",
-                    rx.addr, verify_error, recovery_error
-                ),
-            });
-        }
-        return Ok(true);
-    }
-
-    if verify_receiver_password(rx, temporary_password).is_ok() {
+    if rx.pw == temporary_password {
         return Ok(false);
     }
-
-    Err(format!(
-        "Receiver {} accepts neither the configured password nor the temporary firmware password. No password change was attempted.",
-        rx.addr
-    ))
+    change_receiver_password(rx, &rx.pw, temporary_password)?;
+    verify_receiver_password(rx, temporary_password).map_err(|error| format!(
+        "The temporary password change was acknowledged, but its login check failed. Password recovery is required. {error}"
+    ))?;
+    Ok(true)
 }
 
 fn restore_receiver_password_with_retry(
     rx: &ReceiverCredential,
     temporary_password: &str,
 ) -> Result<(), String> {
-    let mut last_error = String::from("Receiver did not accept the configured password.");
-
-    for attempt in 1..=PASSWORD_RESTORE_ATTEMPTS {
-        if verify_receiver_password(rx, &rx.pw).is_ok() {
-            return Ok(());
-        }
-
-        match change_receiver_password(rx, temporary_password, &rx.pw) {
-            Ok(()) => match verify_receiver_password(rx, &rx.pw) {
-                Ok(()) => return Ok(()),
-                Err(verify_error) => last_error = verify_error,
-            },
-            Err(change_error) => {
-                last_error = change_error;
-            }
-        }
-
-        if attempt < PASSWORD_RESTORE_ATTEMPTS {
-            thread::sleep(Duration::from_secs(PASSWORD_RESTORE_RETRY_SECONDS));
-        }
-    }
-
-    Err(format!(
-        "Cannot restore configured password for {} after {} attempts: {}",
-        rx.addr, PASSWORD_RESTORE_ATTEMPTS, last_error
-    ))
+    receiver_password::restore(rx, temporary_password)
 }
 
 fn upload_local_firmware_package(
@@ -4808,38 +4699,6 @@ fn next_available_download_path(file_name: &str) -> Result<PathBuf, String> {
     Err("Cannot create a unique clone file name in Downloads.".to_string())
 }
 
-fn wait_for_receiver_install(rx: &ReceiverCredential, password: &str) -> Result<(), String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(10))
-        .connect_timeout(Duration::from_secs(4))
-        .build()
-        .map_err(|err| format!("HTTP client error: {err}"))?;
-    let started_at = Instant::now();
-    let timeout = Duration::from_secs(30 * 60);
-    let interval = Duration::from_secs(10);
-    let mut saw_install_or_reboot = false;
-
-    while started_at.elapsed() < timeout {
-        match is_receiver_installing_firmware_with_password(&client, rx, password) {
-            Ok(true) => {
-                saw_install_or_reboot = true;
-            }
-            Ok(false) if saw_install_or_reboot => return Ok(()),
-            Ok(false) => {}
-            Err(_) => {
-                saw_install_or_reboot = true;
-            }
-        }
-
-        thread::sleep(interval);
-    }
-
-    Err(format!(
-        "Timed out waiting for {} to finish firmware install.",
-        rx.addr
-    ))
-}
-
 fn wait_for_receiver_install_live(
     rx: &ReceiverCredential,
     password: &str,
@@ -4922,6 +4781,9 @@ fn wait_for_receiver_install_live(
                             true
                         }
                         Ok(false) => false,
+                        Err(error) if is_receiver_authentication_error(&error) => {
+                            return Err(error)
+                        }
                         Err(_) => {
                             saw_update_activity = true;
                             false
@@ -4995,6 +4857,11 @@ fn wait_for_receiver_install_live(
                 }
             }
             Err(err) => {
+                if is_receiver_authentication_error(&err) {
+                    return Err(format!(
+                        "Firmware monitoring stopped to prevent repeated rejected logins. {err}"
+                    ));
+                }
                 offline_count += 1;
                 if saw_update_activity || saw_cleanup {
                     saw_reboot_offline = true;
@@ -5094,7 +4961,17 @@ fn monitor_receiver_firmware_status_until_stop(
     };
 
     while !stop.load(Ordering::SeqCst) {
-        if let Ok(probe) = receiver_firmware_live_probe(&client, rx, password) {
+        let probe = receiver_firmware_live_probe(&client, rx, password);
+        if probe
+            .as_ref()
+            .err()
+            .is_some_and(|error| is_receiver_authentication_error(error))
+        {
+            update_single_job_message(single_jobs, job_id, phase, "Running", "Running",
+                "Firmware monitoring stopped after a rejected login. Password recovery will follow the upload request.");
+            break;
+        }
+        if let Ok(probe) = probe {
             let update_mode = probe.update_mode.clone();
             let firmware_status = probe.firmware_status.clone();
             let fw_status = probe.fw_status.clone();
@@ -5131,8 +5008,7 @@ fn receiver_firmware_live_probe(
         "http://{}/xml/dynamic/merge.xml?fw_status=&fw_check=&sysData=",
         rx.addr
     );
-    let status_text = get_xml_text_with_password(client, rx, password, &status_url)
-        .or_else(|_| get_xml_text(client, rx, &status_url))?;
+    let status_text = get_xml_text_with_password(client, rx, password, &status_url)?;
     let status_doc = roxmltree::Document::parse(&status_text)
         .map_err(|err| format!("Invalid firmware status XML from {}: {err}", rx.addr))?;
     let fw_status_node = find_node(&status_doc, "fw_status")
@@ -5167,14 +5043,17 @@ fn receiver_firmware_live_probe(
         .or_else(|| fw_status_node.and_then(render_node_text));
     let firmware_status = firmware_status_node.and_then(render_node_text);
     let power_url = format!("http://{}/xml/dynamic/merge.xml?power=", rx.addr);
-    let uptime_seconds = get_xml_text_with_password(client, rx, password, &power_url)
-        .or_else(|_| get_xml_text(client, rx, &power_url))
-        .ok()
-        .and_then(|text| {
-            roxmltree::Document::parse(&text)
-                .ok()
-                .and_then(|doc| get_uptime_seconds(&doc))
-        });
+    let power = get_xml_text_with_password(client, rx, password, &power_url);
+    if let Err(error) = &power {
+        if is_receiver_authentication_error(error) {
+            return Err(error.clone());
+        }
+    }
+    let uptime_seconds = power.ok().and_then(|text| {
+        roxmltree::Document::parse(&text)
+            .ok()
+            .and_then(|doc| get_uptime_seconds(&doc))
+    });
 
     Ok(FirmwareReceiverLiveProbe {
         firmware_status,
@@ -5365,6 +5244,37 @@ fn single_job_uses_fast_image(
         .unwrap_or(false)
 }
 
+fn active_job_status(status: &str) -> &str {
+    match status {
+        "Completed" | "Failed" => "Running",
+        "Cancelled" => "Cancelling",
+        _ => status,
+    }
+}
+
+fn password_recovery_error(job: &FirmwareSingleUpdateJobStatus) -> Option<String> {
+    let restore = job
+        .steps
+        .iter()
+        .rev()
+        .find(|step| step.state == "RestorePassword");
+    if let Some(step) = restore {
+        if step.status == "Completed" {
+            return None;
+        }
+        if step.status == "Failed" {
+            return Some(step.message.clone());
+        }
+    }
+    if job.steps.iter().any(|step| step.state == "ChangePassword") {
+        return Some(format!(
+            "PASSWORD RECOVERY REQUIRED for {}. The configured password has not been verified. Stop other scripts using this receiver and check its password manually.",
+            job.ip
+        ));
+    }
+    None
+}
+
 fn update_single_job_step(
     single_jobs: &Arc<Mutex<HashMap<String, FirmwareSingleUpdateJobStatus>>>,
     job_id: &str,
@@ -5376,7 +5286,9 @@ fn update_single_job_step(
     if let Ok(mut jobs) = single_jobs.lock() {
         if let Some(job) = jobs.get_mut(job_id) {
             job.phase = phase.to_string();
-            job.status = job_status.to_string();
+            // Recovery may still be running after a failed step. Only completion
+            // may publish a terminal status, otherwise the UI stops polling early.
+            job.status = active_job_status(job_status).to_string();
             job.message = message.to_string();
             push_workflow_step(&mut job.steps, phase, step_status, message);
             apply_fast_image_progress_floor(job, phase, step_status);
@@ -5395,7 +5307,7 @@ fn update_single_job_message(
     if let Ok(mut jobs) = single_jobs.lock() {
         if let Some(job) = jobs.get_mut(job_id) {
             job.phase = phase.to_string();
-            job.status = job_status.to_string();
+            job.status = active_job_status(job_status).to_string();
             job.message = message.to_string();
             if let Some(step) = job.steps.iter_mut().rev().find(|step| step.state == phase) {
                 step.status = step_status.to_string();
@@ -5498,6 +5410,32 @@ fn update_single_job_probe(
     }
 }
 
+fn finish_single_job(job: &mut FirmwareSingleUpdateJobStatus, status: &str, message: &str) {
+    let recovery_error = password_recovery_error(job);
+    let status = if recovery_error.is_some() {
+        "Failed"
+    } else {
+        status
+    };
+    job.status = status.to_string();
+    job.message = recovery_error.unwrap_or_else(|| message.to_string());
+    if job.status == "Failed" && job.message.starts_with("PASSWORD RECOVERY REQUIRED") {
+        job.phase = "RestorePassword".to_string();
+    }
+    if status == "Completed" {
+        job.phase = "Completed".to_string();
+        job.update_mode = Some("Update completed".to_string());
+        job.update_percent = Some(100.0);
+        job.update_stage = None;
+        job.update_stage_percent = None;
+    } else if status == "Cancelled" {
+        job.phase = "Cancelled".to_string();
+        job.update_mode = Some("Update cancelled".to_string());
+    }
+    job.update_in_progress = false;
+    job.completed_at = Some(now_seconds());
+}
+
 fn complete_single_job(
     single_jobs: &Arc<Mutex<HashMap<String, FirmwareSingleUpdateJobStatus>>>,
     job_id: &str,
@@ -5508,21 +5446,7 @@ fn complete_single_job(
     if let Ok(mut jobs) = single_jobs.lock() {
         if let Some(job) = jobs.get_mut(job_id) {
             let already_completed = job.completed_at.is_some();
-            job.status = status.to_string();
-            job.message = message.to_string();
-            if status == "Completed" {
-                job.phase = "Completed".to_string();
-                job.update_mode = Some("Update completed".to_string());
-                job.update_percent = Some(100.0);
-                job.update_stage = None;
-                job.update_stage_percent = None;
-                job.update_in_progress = false;
-            } else if status == "Cancelled" {
-                job.phase = "Cancelled".to_string();
-                job.update_mode = Some("Update cancelled".to_string());
-                job.update_in_progress = false;
-            }
-            job.completed_at = Some(now_seconds());
+            finish_single_job(job, status, message);
             if !already_completed {
                 history_entry = Some(single_update_history_entry_from_job(job));
             }
@@ -6081,6 +6005,9 @@ fn read_update_safety_uptime(
 }
 
 fn ensure_update_safety_for_receivers(receivers: &[FirmwarePlanReceiver]) -> Result<(), String> {
+    for receiver in receivers {
+        password_recovery_notices::ensure_ready(&receiver.credential.addr)?;
+    }
     let settings = read_update_safety_settings()?;
     let client = Client::builder()
         .timeout(Duration::from_secs(8))
@@ -6097,6 +6024,11 @@ fn ensure_update_safety_for_receivers(receivers: &[FirmwarePlanReceiver]) -> Res
                     let client = client.clone();
                     let settings = settings.clone();
                     scope.spawn(move || {
+                        let access = receiver_password::operation_lock(&receiver.credential.addr)?;
+                        let _access = access
+                            .try_lock()
+                            .map_err(|_| "Receiver is busy with another operation.".to_string())?;
+                        password_recovery_notices::ensure_ready(&receiver.credential.addr)?;
                         read_update_safety_uptime(&client, receiver).map(|uptime| {
                             evaluate_update_safety_window(
                                 &receiver.credential.addr,
@@ -6282,22 +6214,12 @@ fn delete_clone_file_backup(path: &str) -> Result<(), String> {
 }
 
 fn verify_receiver_password(rx: &ReceiverCredential, password: &str) -> Result<(), String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(8))
-        .connect_timeout(Duration::from_secs(4))
-        .build()
-        .map_err(|err| format!("HTTP client error: {err}"))?;
-    get_xml_text_with_password(
-        &client,
-        rx,
-        password,
-        &format!("http://{}/xml/dynamic/merge.xml?sysData=", rx.addr),
-    )
-    .map(|_| ())
+    receiver_password::verify(rx, password)
 }
 
 fn format_workflow_state(value: &str) -> String {
     match value {
+        "CheckPassword" => "Check Password".to_string(),
         "ChangePassword" => "Change Password".to_string(),
         "UploadFirmware" => "Upload Firmware".to_string(),
         "MonitorInstall" => "Monitor Install".to_string(),
@@ -6475,7 +6397,10 @@ fn ip_sort_key(ip: &str) -> (u8, [u8; 4], String) {
     }
 }
 
-fn scan_all(receivers: Vec<ReceiverCredential>) -> Vec<ReceiverSummary> {
+fn scan_all(
+    receivers: Vec<ReceiverCredential>,
+    single_jobs: &Arc<Mutex<HashMap<String, FirmwareSingleUpdateJobStatus>>>,
+) -> Vec<ReceiverSummary> {
     let queue = Arc::new(Mutex::new(VecDeque::from(receivers.clone())));
     let results = Arc::new(Mutex::new(Vec::with_capacity(receivers.len())));
     let workers = DEFAULT_WORKERS.min(receivers.len().max(1));
@@ -6495,7 +6420,30 @@ fn scan_all(receivers: Vec<ReceiverCredential>) -> Vec<ReceiverSummary> {
                     break;
                 };
 
-                let summary = scan_receiver(&rx);
+                let access = receiver_password::operation_lock(&rx.addr).ok();
+                let access_guard = access.as_ref().and_then(|access| access.try_lock().ok());
+                let paused = access_guard.is_none()
+                    || password_recovery_notices::read()
+                        .map(|notices| notices.iter().any(|notice| notice.ip == rx.addr))
+                        .unwrap_or(true)
+                    || single_jobs
+                        .lock()
+                        .map(|jobs| {
+                            jobs.values()
+                                .any(|job| job.ip == rx.addr && job.completed_at.is_none())
+                        })
+                        .unwrap_or(true);
+                let summary = if paused {
+                    let mut summary = ReceiverSummary::from_config(&rx);
+                    summary.needs_review = true;
+                    summary.last_error = Some(
+                        "Status scan paused during firmware update or pending password recovery."
+                            .into(),
+                    );
+                    summary
+                } else {
+                    scan_receiver(&rx)
+                };
                 let mut guard = results.lock().expect("receiver results mutex poisoned");
                 guard.push(summary);
             });
@@ -6646,6 +6594,12 @@ fn open_url(url: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn is_receiver_authentication_error(error: &str) -> bool {
+    [401, 403, 423, 429]
+        .iter()
+        .any(|status| error.starts_with(&format!("HTTP {status} for ")))
 }
 
 fn get_xml_text(client: &Client, rx: &ReceiverCredential, url: &str) -> Result<String, String> {
@@ -6878,6 +6832,8 @@ pub fn run() {
             delete_single_firmware_update_history,
             download_clone_file_backup,
             restore_receiver_password,
+            get_password_recovery_notices,
+            play_password_recovery_sound,
             force_restore_firmware_job_passwords,
             start_firmware_update_job,
             get_firmware_job_status,
@@ -6901,6 +6857,175 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn password_test_job(batch: Option<&str>) -> FirmwareSingleUpdateJobStatus {
+        create_single_update_job_status(
+            "test-job",
+            &FirmwarePlanReceiver {
+                credential: ReceiverCredential {
+                    addr: "127.0.0.1".into(),
+                    user: "test-user".into(),
+                    pw: "test-only".into(),
+                    group: 1,
+                },
+                model: "alloy".into(),
+                target_file: "test.timg".into(),
+                target_url: "local://test.timg".into(),
+                local_package_path: None,
+            },
+            batch.map(str::to_string),
+            "Test queued",
+        )
+    }
+
+    #[test]
+    fn recovery_alert_waits_for_completion_and_includes_receiver_and_failure_details() {
+        let mut job = password_test_job(Some("group-fw-test"));
+        job.receiver_name = Some("Lab receiver".into());
+        let notice = password_recovery_notices::PasswordRecoveryNotice {
+            ip: job.ip.clone(),
+            job_id: job.job_id.clone(),
+            message: "Recovery is unconfirmed".into(),
+        };
+        let mut jobs = HashMap::from([(job.job_id.clone(), job)]);
+        assert!(visible_password_recovery_notices(vec![notice.clone()], &jobs).is_empty());
+        let job = jobs.get_mut("test-job").unwrap();
+        push_workflow_step(
+            &mut job.steps,
+            "RestorePassword",
+            "Failed",
+            "PASSWORD RECOVERY REQUIRED: single login was rejected",
+        );
+        finish_single_job(job, "Failed", "Update failed");
+        let alerts = visible_password_recovery_notices(vec![notice.clone()], &jobs);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].receiver_name.as_deref(), Some("Lab receiver"));
+        assert_eq!(alerts[0].model.as_deref(), Some("alloy"));
+        assert!(alerts[0].message.contains("single login was rejected"));
+        assert!(visible_password_recovery_notices(vec![], &jobs).is_empty());
+        let after_restart = visible_password_recovery_notices(vec![notice], &HashMap::new());
+        assert_eq!(after_restart.len(), 1);
+        assert_eq!(after_restart[0].message, "Recovery is unconfirmed");
+    }
+
+    #[test]
+    fn single_group_and_multiple_cannot_complete_with_unverified_password() {
+        for batch in [None, Some("group-fw-test"), Some("multiple-fw-test")] {
+            for requested_status in ["Completed", "Cancelled", "Failed"] {
+                let mut job = password_test_job(batch);
+                push_workflow_step(
+                    &mut job.steps,
+                    "ChangePassword",
+                    "Completed",
+                    "Temporary password active",
+                );
+                push_workflow_step(
+                    &mut job.steps,
+                    "RestorePassword",
+                    "Failed",
+                    "PASSWORD RECOVERY REQUIRED for 127.0.0.1. Password rejected.",
+                );
+                finish_single_job(&mut job, requested_status, "Generic completion message");
+                assert_eq!(job.status, "Failed");
+                assert_eq!(job.phase, "RestorePassword");
+                assert!(job.message.contains("PASSWORD RECOVERY REQUIRED"));
+                let history = single_update_history_entry_from_job(&job);
+                assert_eq!(history.result, "Failed");
+                assert!(history
+                    .errors
+                    .iter()
+                    .any(|error| error.contains("PASSWORD RECOVERY REQUIRED")));
+            }
+        }
+    }
+
+    #[test]
+    fn missing_recovery_step_is_never_success() {
+        let mut job = password_test_job(None);
+        push_workflow_step(
+            &mut job.steps,
+            "ChangePassword",
+            "Running",
+            "Write may have started",
+        );
+        finish_single_job(&mut job, "Completed", "Done");
+        assert_eq!(job.status, "Failed");
+        assert!(job.message.starts_with("PASSWORD RECOVERY REQUIRED"));
+    }
+
+    #[test]
+    fn verified_recovery_allows_completion_and_cancellation() {
+        for status in ["Completed", "Cancelled"] {
+            let mut job = password_test_job(None);
+            push_workflow_step(&mut job.steps, "ChangePassword", "Completed", "Active");
+            push_workflow_step(&mut job.steps, "RestorePassword", "Completed", "Verified");
+            finish_single_job(&mut job, status, "Verified");
+            assert_eq!(job.status, status);
+        }
+    }
+
+    #[test]
+    fn failed_steps_keep_polling_until_recovery_finishes() {
+        let jobs = Arc::new(Mutex::new(HashMap::from([(
+            "test-job".into(),
+            password_test_job(None),
+        )])));
+        update_single_job_step(
+            &jobs,
+            "test-job",
+            "UploadFirmware",
+            "Failed",
+            "Failed",
+            "Upload failed",
+        );
+        assert!(!single_job_is_terminal(&jobs, "test-job"));
+        assert_eq!(
+            jobs.lock().unwrap()["test-job"]
+                .steps
+                .last()
+                .unwrap()
+                .status,
+            "Failed"
+        );
+        update_single_job_step(
+            &jobs,
+            "test-job",
+            "RestorePassword",
+            "Completed",
+            "Completed",
+            "Verified",
+        );
+        assert!(!single_job_is_terminal(&jobs, "test-job"));
+    }
+
+    #[test]
+    fn recovery_failure_on_unwind_is_preserved_in_final_result() {
+        let jobs = Arc::new(Mutex::new(HashMap::from([(
+            "test-job".into(),
+            password_test_job(None),
+        )])));
+        let recovery_jobs = Arc::clone(&jobs);
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            let _guard = PasswordRecoveryGuard::new(move || {
+                let message = "PASSWORD RECOVERY REQUIRED for 127.0.0.1";
+                update_single_job_step(
+                    &recovery_jobs,
+                    "test-job",
+                    "RestorePassword",
+                    "Failed",
+                    "Running",
+                    message,
+                );
+                Err(message.into())
+            });
+            panic!("Simulated worker failure");
+        }));
+        let mut jobs = jobs.lock().unwrap();
+        let job = jobs.get_mut("test-job").unwrap();
+        finish_single_job(job, "Cancelled", "Generic cancellation message");
+        assert_eq!(job.status, "Failed");
+        assert!(job.message.contains("PASSWORD RECOVERY REQUIRED"));
+    }
 
     #[test]
     fn parser_walks_nested_receiver_nodes_and_deduplicates() {
@@ -7479,6 +7604,26 @@ mod tests {
         assert!(!evaluation.allowed);
         assert_eq!(evaluation.state, "PostRestartDelay");
         assert_eq!(evaluation.available_in_seconds, Some(1));
+    }
+
+    #[test]
+    fn parallel_mode_uses_every_selected_receiver() {
+        assert_eq!(receiver_concurrency(true, 16), 16);
+        assert_eq!(receiver_concurrency(true, 25), 25);
+        assert_eq!(receiver_concurrency(true, 80), 25);
+        assert_eq!(receiver_concurrency(false, 16), 1);
+    }
+
+    #[test]
+    fn multiple_batch_jobs_do_not_use_the_standalone_limit() {
+        let (batch, batch_limit) =
+            single_or_multiple_reservation("job-1", "192.0.2.10", Some("multiple-fw-123"));
+        assert_eq!(batch.kind, FirmwareJobKind::Multiple);
+        assert_eq!(batch_limit, usize::MAX);
+
+        let (single, single_limit) = single_or_multiple_reservation("job-2", "192.0.2.11", None);
+        assert_eq!(single.kind, FirmwareJobKind::Single);
+        assert_eq!(single_limit, MAX_SINGLE_FIRMWARE_JOBS);
     }
 
     #[test]

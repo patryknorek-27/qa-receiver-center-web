@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="modus-modern-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Group update responsive preview</title>
+    <link rel="stylesheet" href="/src/index.css" />
+    <link rel="stylesheet" href="/src/App.css" />
+    <style>
+      html, body, #preview { width: 100%; height: 100%; margin: 0; }
+      body { background: var(--bg); }
+      .preview-layer { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; }
+      .preview-chevron { color: var(--muted); font-size: 22px; line-height: 1; transition: transform 160ms ease; }
+      [aria-expanded="true"] .preview-chevron { transform: rotate(90deg); }
+      .multiple-update-status-details[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="preview" class="preview-layer">
+      <section class="multiple-update-modal" aria-label="Group firmware update status">
+        <header class="credentials-header">
+          <div class="credentials-title">
+            <div class="credentials-icon">↻</div>
+            <div><h2>[QA] Beta Firmware Update</h2><p>16 receivers - V6.63</p></div>
+          </div>
+          <button class="modal-close" type="button" aria-label="Minimize group update status">−</button>
+        </header>
+        <div class="multiple-update-modal-body">
+          <div class="multiple-update-overview running">
+            <div class="multiple-update-overview-heading">
+              <div><span class="preflight-pill running">Running</span><h3>16 receiver updates run in parallel</h3></div>
+              <strong>18.4%</strong>
+            </div>
+            <div class="single-update-progress-track"><div style="width:18.4%"></div></div>
+            <div class="multiple-update-counters"><span>1 completed</span><span>0 cancelled</span><span>0 failed</span><span>15 active</span><span>0 queued</span></div>
+          </div>
+          <div id="receiver-list" class="multiple-update-status-list"></div>
+        </div>
+        <footer class="multiple-update-modal-footer">
+          <div><strong>Password recovery and cancellation</strong><span>Active receivers will restore their configured passwords after the update.</span></div>
+          <div class="group-update-footer-actions"><button class="secondary-button" type="button">Force Restore Passwords</button><button class="danger-button" type="button">Cancel Update</button></div>
+        </footer>
+      </section>
+    </main>
+    <script>
+      const list = document.getElementById('receiver-list')
+      const receivers = Array.from({ length: 16 }, (_, index) => ({
+        ip: `192.0.2.${index + 10}`,
+        progress: index === 0 ? 100 : 12 + index * 2,
+        status: index === 0 ? 'Completed' : 'Running',
+        phase: index === 0 ? 'Password Restored' : index % 3 === 0 ? 'Uploading Firmware' : 'Waiting for Receiver',
+      }))
+      list.innerHTML = receivers.map((receiver) => `
+        <article class="multiple-update-status-item ${receiver.status.toLowerCase()}">
+          <button type="button" class="multiple-update-status-main" aria-expanded="false" title="Show receiver details">
+            <span class="preview-chevron">›</span>
+            <div><strong>${receiver.ip}</strong><span>BD940-INS</span></div>
+            <div class="multiple-item-progress"><span>${receiver.progress}%</span><div><i style="width:${receiver.progress}%"></i></div></div>
+            <span class="preflight-pill ${receiver.status.toLowerCase()}">${receiver.status}</span>
+          </button>
+          <div class="multiple-update-status-details" hidden>
+            <div><span>Current FW</span><strong>6.63-0.73</strong></div>
+            <div><span>Target Package</span><strong>argon_titan_V663_073.timg</strong></div>
+            <div><span>Current Phase</span><strong>${receiver.phase}</strong></div>
+            <p>The receiver is updating normally. Details remain visible while this row is expanded.</p>
+          </div>
+        </article>`).join('')
+      list.addEventListener('click', (event) => {
+        const button = event.target.closest('.multiple-update-status-main')
+        if (!button) return
+        const details = button.nextElementSibling
+        const expanded = button.getAttribute('aria-expanded') === 'true'
+        button.setAttribute('aria-expanded', String(!expanded))
+        button.title = expanded ? 'Show receiver details' : 'Hide receiver details'
+        details.hidden = expanded
+      })
+    </script>
+  </body>
+</html>
