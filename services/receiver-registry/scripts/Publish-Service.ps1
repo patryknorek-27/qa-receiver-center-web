@@ -48,7 +48,16 @@ if ($LASTEXITCODE -ne 0) {
         }
     }
 
-@("Install-Service.ps1", "Update-Service.ps1", "Uninstall-Service.ps1", "Test-Service.ps1", "Import-Receivers.ps1") |
+@(
+    "Install-Service.ps1",
+    "Update-Service.ps1",
+    "Uninstall-Service.ps1",
+    "Test-Service.ps1",
+    "Import-Receivers.ps1",
+    "Import-IpInventory.ps1",
+    "Enable-IpManagement.ps1",
+    "Enable-GuestPortal.ps1"
+) |
     ForEach-Object {
         Copy-Item -LiteralPath (Join-Path $scriptDirectory $_) -Destination $resolvedOutput -Force
     }

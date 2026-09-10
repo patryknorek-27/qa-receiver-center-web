@@ -480,6 +480,21 @@
   box-shadow: inset 3px 0 0 var(--modus-wc-color-highlight-blue, #019aeb);
 }
 
+.nav-request-badge {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  margin-left: auto;
+  padding: 0 6px;
+  color: #ffffff;
+  background: #c9363e;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .nav-group {
   display: grid;
   gap: 6px;
@@ -641,6 +656,16 @@ h2 {
   font: inherit;
 }
 
+.search-box:focus-within {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.search-box input:focus-visible {
+  outline: none;
+}
+
 .primary-button,
 .secondary-button,
 .icon-button,
@@ -649,15 +674,16 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: var(--modus-wc-border-radius-btn, 8px);
-  font-size: var(--modus-wc-font-size-md, 14px);
-  font-weight: var(--modus-wc-font-weight-semibold, 600);
+  gap: var(--space-2);
+  border-radius: var(--radius-control);
+  font-size: var(--font-body);
+  font-weight: var(--weight-label);
   line-height: var(--modus-wc-line-height-md, 24px);
   transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    border-color 160ms ease;
+    background-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
 }
 
 .primary-button:disabled,
@@ -671,18 +697,18 @@ h2 {
 }
 
 .primary-button {
-  padding: 0 16px;
-  color: var(--modus-wc-color-primary-content, #ffffff);
-  background: var(--primary);
+  padding: 0 var(--space-4);
+  color: var(--action-primary-content);
+  background: var(--action-primary);
   border: 1px solid transparent;
   box-shadow: none;
 }
 
 .danger-button {
-  padding: 0 16px;
-  color: #ffffff;
-  background: var(--modus-wc-color-error, #da212c);
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: 0 var(--space-4);
+  color: var(--action-danger-content);
+  background: var(--action-danger);
+  border: 1px solid transparent;
   box-shadow: none;
 }
 
@@ -709,14 +735,25 @@ h2 {
   transform: none;
 }
 
-.primary-button:hover {
-  background: var(--primary-hover);
+.primary-button:hover:not(:disabled) {
+  background: var(--action-primary-hover);
 }
 
-.secondary-button:hover,
-.icon-button:hover {
+.secondary-button:hover:not(:disabled),
+.icon-button:hover:not(:disabled) {
   background: var(--surface-subtle);
   border-color: var(--modus-wc-color-base-300, var(--border));
+}
+
+.danger-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-danger) 90%, black);
+}
+
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.danger-button:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 
 .metric-grid {
@@ -731,15 +768,35 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
-  border-radius: 8px;
+  border-radius: var(--radius-surface);
 }
 
 .metric-tile {
+  position: relative;
+  overflow: hidden;
   min-height: 96px;
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 18px;
+  box-shadow: none;
+}
+
+.metric-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--metric-accent);
+}
+
+.metric-success { --metric-accent: var(--status-success); }
+.metric-warning { --metric-accent: var(--status-warning); }
+.metric-danger { --metric-accent: var(--status-danger); }
+.metric-neutral { --metric-accent: var(--primary); }
+
+.metric-tile > div:last-child {
+  min-width: 0;
 }
 
 .metric-icon {
@@ -751,13 +808,13 @@ h2 {
 }
 
 .metric-icon.success {
-  color: var(--modus-wc-color-success, #006638);
-  background: rgba(34, 197, 94, 0.12);
+  color: var(--status-success);
+  background: color-mix(in srgb, var(--status-success) 12%, transparent);
 }
 
 .metric-icon.warning {
-  color: var(--modus-wc-color-warning, #e49325);
-  background: rgba(245, 158, 11, 0.13);
+  color: var(--status-warning);
+  background: color-mix(in srgb, var(--status-warning) 13%, transparent);
 }
 
 .metric-icon.neutral {
@@ -766,8 +823,8 @@ h2 {
 }
 
 .metric-icon.danger {
-  color: var(--modus-wc-color-error, #da212c);
-  background: rgba(239, 68, 68, 0.12);
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--status-danger) 12%, transparent);
 }
 
 .metric-tile span {
@@ -778,9 +835,10 @@ h2 {
 .metric-tile strong {
   display: block;
   color: var(--heading);
-  font-size: var(--modus-wc-font-size-3xl, 24px);
+  font-size: 30px;
   line-height: var(--modus-wc-line-height-3xl, 32px);
   font-weight: var(--modus-wc-font-weight-semibold, 600);
+  font-variant-numeric: tabular-nums;
 }
 
 .content-grid {
@@ -820,11 +878,90 @@ h2 {
 
 .dashboard-receiver-list {
   padding: 12px;
-  background: var(--surface-subtle);
+  background: var(--bg);
 }
 
-.dashboard-receiver-list .receiver-row {
-  min-height: 100px;
+.dashboard-device {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  transition: border-color var(--motion-fast) var(--motion-ease);
+}
+
+.dashboard-device:hover,
+.dashboard-device:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.dashboard-device-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--status-danger) 10%, transparent);
+}
+
+.dashboard-device-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-device-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.dashboard-device-title strong {
+  color: var(--heading);
+  font-size: var(--font-body);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-device-status {
+  color: var(--status-danger);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-label);
+}
+
+.dashboard-device-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+
+.dashboard-device-reason {
+  margin: 6px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+}
+
+@container (max-width: 520px) {
+  .dashboard-device {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .dashboard-device-icon {
+    display: none;
+  }
 }
 
 .dashboard-alert-surface .receiver-header {
@@ -1298,9 +1435,9 @@ h2 {
 }
 
 .status-pill.online {
-  color: var(--modus-wc-color-success, #006638);
-  background: linear-gradient(180deg, rgba(34, 197, 94, 0.16), rgba(34, 197, 94, 0.08));
-  border-color: rgba(34, 197, 94, 0.16);
+  color: var(--status-success);
+  background: color-mix(in srgb, var(--status-success) 10%, transparent);
+  border-color: color-mix(in srgb, var(--status-success) 24%, transparent);
 }
 
 .status-pill.online::before {
@@ -1309,9 +1446,9 @@ h2 {
 }
 
 .status-pill.offline {
-  color: var(--modus-wc-color-error, #da212c);
-  background: linear-gradient(180deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
-  border-color: rgba(239, 68, 68, 0.16);
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--status-danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--status-danger) 24%, transparent);
 }
 
 .status-pill.offline::before {
@@ -1833,9 +1970,9 @@ h2 {
   height: auto;
   max-height: none;
   overflow: auto;
-  padding: 8px 12px 12px;
+  padding: 4px 16px 12px;
   color: var(--text);
-  background: var(--surface-subtle);
+  background: var(--surface);
 }
 
 .log-entry {
@@ -1844,8 +1981,8 @@ h2 {
   grid-template-columns: 72px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  padding: 10px 4px;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   font-size: var(--modus-wc-font-size-sm, 12px);
   line-height: 1.45;
 }
@@ -1855,9 +1992,9 @@ h2 {
 }
 
 .log-entry time {
-  color: var(--primary);
+  color: var(--muted);
   font-family: var(--mono);
-  font-size: var(--modus-wc-font-size-xs, 10px);
+  font-size: 11px;
   font-weight: var(--modus-wc-font-weight-semibold, 600);
   white-space: nowrap;
 }
@@ -1882,6 +2019,782 @@ h2 {
 
 .placeholder-surface p {
   color: var(--muted);
+}
+
+.ip-management-surface {
+  height: calc(100vh - var(--app-navbar-height) - 112px);
+  min-height: 560px;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.ip-management-header,
+.ip-management-toolbar,
+.ip-edit-modal header,
+.ip-reject-modal header,
+.ip-edit-modal footer,
+.ip-reject-modal footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ip-management-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ip-management-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ip-management-tabs button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.ip-management-tabs button.active {
+  color: var(--primary);
+  background: var(--surface);
+  box-shadow: inset 0 -2px var(--primary);
+}
+
+.ip-management-tabs button span {
+  min-width: 21px;
+  height: 21px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  color: var(--action-danger-content);
+  background: var(--action-danger);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.ip-management-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ip-management-metrics > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  border-top: 3px solid var(--ip-metric-accent, var(--border));
+}
+
+.ip-metric-total { --ip-metric-accent: var(--primary); }
+.ip-metric-used { --ip-metric-accent: var(--status-success); }
+.ip-metric-unused { --ip-metric-accent: var(--muted); }
+.ip-metric-reserved,
+.ip-metric-pending { --ip-metric-accent: var(--status-warning); }
+
+.ip-management-metrics span,
+.ip-request-field span,
+.ip-edit-modal label > span,
+.ip-reject-modal label > span,
+.ip-edit-modal header span,
+.ip-reject-modal header span {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-label);
+  text-transform: none;
+}
+
+.ip-management-metrics strong {
+  color: var(--heading);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ip-management-toolbar {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.ip-status-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 40px;
+  padding: 3px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ip-status-filters button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ip-status-filters button.active {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--surface) 90%, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.ip-status-filters button span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ip-search-box {
+  width: min(430px, 100%);
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ip-search-box:focus-within {
+  color: var(--primary);
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ip-clear-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  color: var(--primary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--font-caption);
+  cursor: pointer;
+}
+
+.ip-clear-filters:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.ip-search-box input {
+  width: 100%;
+  min-width: 0;
+  color: var(--heading);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+}
+
+.ip-management-toolbar select {
+  width: 170px;
+  height: 40px;
+  padding: 0 10px;
+  color: var(--heading);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ip-result-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ip-management-error {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--surface) 92%, var(--status-danger));
+  border: 1px solid color-mix(in srgb, var(--status-danger) 30%, var(--border));
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.ip-management-notices {
+  display: grid;
+  gap: 8px;
+}
+
+.ip-ping-summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.ip-ping-summary strong {
+  color: var(--status-success);
+}
+
+.ip-ping-summary time {
+  margin-left: auto;
+}
+
+.ip-management-error span {
+  flex: 1;
+}
+
+.ip-management-error button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ip-table-wrap,
+.ip-request-list {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.ip-table-wrap:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ip-table {
+  width: 100%;
+  min-width: 1540px;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--heading);
+  font-size: 12px;
+}
+
+.ip-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 39px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: var(--weight-label);
+  text-align: left;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.ip-sort-button {
+  width: 100%;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.ip-sort-button:hover {
+  color: var(--primary);
+}
+
+.ip-sort-button:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ip-table td {
+  height: 47px;
+  max-width: 180px;
+  padding: 6px 10px;
+  overflow: hidden;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-table th,
+.ip-table td {
+  border-left: 0;
+  border-right: 0;
+}
+
+.ip-table th:first-child,
+.ip-table td:first-child {
+  position: sticky;
+  left: 0;
+  box-shadow: 1px 0 var(--border);
+}
+
+.ip-table th:last-child,
+.ip-table td:last-child {
+  position: sticky;
+  right: 0;
+  box-shadow: -1px 0 var(--border);
+}
+
+.ip-table td:first-child,
+.ip-table td:last-child {
+  z-index: 1;
+}
+
+.ip-table th:first-child,
+.ip-table th:last-child {
+  z-index: 3;
+}
+
+.ip-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ip-table tbody tr:hover td,
+.ip-table tbody tr:focus-within td {
+  background: color-mix(in srgb, var(--surface) 94%, var(--primary));
+}
+
+.ip-table .ip-conflict-row td {
+  background: color-mix(in srgb, var(--surface) 91%, var(--status-warning));
+}
+
+.ip-table .ip-usage-expired-row td {
+  background: color-mix(in srgb, var(--surface) 90%, var(--status-danger));
+}
+
+.ip-table .ip-usage-expired-row:hover td {
+  background: color-mix(in srgb, var(--surface) 84%, var(--status-danger));
+}
+
+.ip-usage-expired-cell {
+  color: var(--status-danger);
+  font-weight: 700;
+}
+
+.ip-address-cell strong {
+  display: block;
+  font-size: 13px;
+}
+
+.ip-address-cell > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: var(--status-warning);
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.ip-status-badge {
+  min-width: 67px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--modus-wc-border-radius-badge, 4px);
+  font-size: 11px;
+  font-weight: var(--weight-label);
+}
+
+.ip-status-badge.used,
+.ip-status-badge.approved {
+  color: var(--status-success);
+  background: color-mix(in srgb, var(--surface) 91%, var(--status-success));
+  border-color: color-mix(in srgb, var(--status-success) 24%, transparent);
+}
+
+.ip-status-badge.unused {
+  color: var(--text);
+  background: var(--surface-subtle);
+  border-color: var(--border);
+}
+
+.ip-status-badge.reserved,
+.ip-status-badge.pending {
+  color: var(--heading);
+  background: color-mix(in srgb, var(--surface) 85%, var(--status-warning));
+  border-color: color-mix(in srgb, var(--status-warning) 40%, transparent);
+}
+
+.ip-status-badge.rejected {
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--surface) 90%, var(--status-danger));
+  border-color: color-mix(in srgb, var(--status-danger) 24%, transparent);
+}
+
+.ip-online-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.ip-online-state.online {
+  color: var(--status-success);
+}
+
+.ip-online-state.offline {
+  color: var(--status-danger);
+}
+
+.ip-notes-cell {
+  width: 190px;
+}
+
+.ip-edit-button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ip-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ip-edit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ip-edit-button:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.ip-empty-state,
+.ip-loading-state {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.ip-empty-state strong {
+  color: var(--heading);
+  font-size: var(--font-body);
+}
+
+.ip-request-list {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  background: var(--surface);
+}
+
+.ip-request-row {
+  min-width: 1070px;
+  display: grid;
+  grid-template-columns: 155px repeat(6, minmax(120px, 1fr)) minmax(170px, 1.2fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ip-request-row:last-child {
+  border-bottom: 0;
+}
+
+.ip-request-main > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ip-request-main p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ip-request-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ip-request-field strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-request-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.ip-request-actions .primary-button,
+.ip-request-actions .secondary-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.ip-request-decision {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ip-edit-modal,
+.ip-reject-modal {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  color: var(--heading);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 34px 74px rgba(2, 6, 23, 0.36);
+}
+
+.ip-reject-modal {
+  width: min(520px, 100%);
+}
+
+.ip-edit-modal header,
+.ip-reject-modal header {
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--surface-elevated) 92%, var(--primary));
+  border-bottom: 1px solid var(--border);
+}
+
+.ip-edit-modal header h2,
+.ip-reject-modal header h2 {
+  margin-top: 3px;
+  font-size: 19px;
+}
+
+.ip-edit-modal form,
+.ip-reject-modal form {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.ip-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.ip-edit-modal label,
+.ip-reject-modal label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.ip-edit-modal input,
+.ip-edit-modal select,
+.ip-edit-modal textarea,
+.ip-reject-modal textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0 11px;
+  color: var(--heading);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ip-edit-modal input,
+.ip-edit-modal select {
+  height: 42px;
+}
+
+.ip-edit-modal textarea,
+.ip-reject-modal textarea {
+  min-height: 92px;
+  padding-top: 10px;
+  resize: vertical;
+}
+
+.ip-edit-modal input:focus,
+.ip-edit-modal select:focus,
+.ip-edit-modal textarea:focus,
+.ip-reject-modal textarea:focus {
+  border-color: rgba(14, 165, 233, 0.56);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.ip-edit-modal select:disabled {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.ip-edit-notes {
+  grid-column: 1 / -1;
+}
+
+.ip-edit-modal footer,
+.ip-reject-modal footer {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+@media (max-width: 1100px) {
+  .ip-management-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ip-management-surface {
+    min-height: 500px;
+  }
+
+  .ip-request-list {
+    overflow-x: hidden;
+  }
+
+  .ip-request-row {
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ip-request-main,
+  .ip-request-actions {
+    grid-column: 1 / -1;
+  }
+
+  .ip-request-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 700px) {
+  .ip-management-surface {
+    height: auto;
+    min-height: calc(100vh - var(--app-navbar-height) - 96px);
+    grid-template-rows: auto auto auto auto minmax(420px, 1fr);
+    padding: 12px;
+  }
+
+  .ip-management-header,
+  .ip-management-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ip-management-tabs,
+  .ip-search-box,
+  .ip-management-toolbar select,
+  .ip-status-filters {
+    width: 100%;
+  }
+
+  .ip-management-actions,
+  .ip-status-filters {
+    flex-wrap: wrap;
+  }
+
+  .ip-management-actions .secondary-button,
+  .ip-status-filters button {
+    flex: 1;
+  }
+
+  .ip-management-tabs button {
+    flex: 1;
+  }
+
+  .ip-management-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ip-result-count {
+    margin-left: 0;
+  }
+
+  .ip-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ip-edit-notes {
+    grid-column: auto;
+  }
 }
 
 .history-surface {
@@ -6049,6 +6962,39 @@ button {
   gap: 8px;
 }
 
+.firmware-start-control {
+  min-width: min(100%, 250px);
+  display: grid;
+  gap: 6px;
+}
+
+.firmware-start-blocker {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 9px;
+  color: color-mix(in srgb, var(--heading) 78%, #b45309);
+  background: color-mix(in srgb, var(--surface) 91%, #f59e0b);
+  border: 1px solid color-mix(in srgb, var(--border) 68%, #f59e0b);
+  border-radius: 4px;
+  font-size: var(--modus-wc-font-size-xs, 11px);
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.firmware-start-blocker svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #b45309;
+}
+
+.firmware-start-blocker.modal {
+  margin-top: 10px;
+}
+
 .preflight-summary {
   min-width: 280px;
   display: grid;
@@ -8777,6 +9723,174 @@ button.update-receiver-card:hover {
   display: none;
 }
 
+.workspace:has(.ip-monitoring-settings-surface) .topbar {
+  display: none;
+}
+
+.ip-monitoring-settings-surface {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-self: start;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ip-monitoring-settings-header {
+  display: flex;
+  align-items: center;
+  min-height: 68px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ip-monitoring-settings-layout {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  background: var(--surface-subtle);
+}
+
+.ip-monitoring-settings-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.ip-monitoring-settings-heading,
+.ip-monitoring-settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ip-monitoring-settings-heading h3 {
+  margin: 0;
+  color: var(--heading);
+  font-size: 18px;
+}
+
+.ip-monitoring-settings-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ip-monitoring-toggle {
+  min-width: 118px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  color: var(--heading);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ip-monitoring-toggle input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--primary);
+}
+
+.ip-monitoring-settings-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ip-monitoring-settings-fields label {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  color: var(--heading);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ip-monitoring-settings-fields select {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  color: var(--heading);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.ip-monitoring-settings-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border-left: 3px solid var(--primary);
+  font-size: 13px;
+}
+
+.ip-monitoring-settings-note svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.ip-monitoring-settings-actions {
+  min-height: 58px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.ip-monitoring-settings-actions > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ip-monitoring-settings-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 680px) {
+  .ip-monitoring-settings-heading,
+  .ip-monitoring-settings-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ip-monitoring-settings-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .ip-monitoring-toggle {
+    align-self: flex-start;
+  }
+
+  .ip-monitoring-settings-actions > div {
+    display: grid;
+    width: 100%;
+  }
+}
+
 .update-safety-surface {
   position: relative;
   display: grid;
@@ -9389,6 +10503,10 @@ button.update-receiver-card:hover {
 .group-operation-page .firmware-dock-actions button {
   width: 100%;
   min-width: 0;
+}
+
+.group-operation-page .firmware-start-control {
+  width: 100%;
 }
 
 .single-update-panel,

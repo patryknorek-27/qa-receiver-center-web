@@ -1,13 +1,21 @@
 using System.Reflection;
+using System.Text.Json;
+using Microsoft.AspNetCore.RateLimiting;
+using QAReceiverRegistry.Configuration;
 using QAReceiverRegistry.Data;
+using QAReceiverRegistry.Infrastructure;
 using QAReceiverRegistry.Models;
+using QAReceiverRegistry.Services;
 
 namespace QAReceiverRegistry.Api;
 
 public static class RegistryEndpoints
 {
-    public static IEndpointRouteBuilder MapRegistryEndpoints(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapRegistryEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        FeatureOptions? featureOptions = null)
     {
+        featureOptions ??= new FeatureOptions();
         endpoints.MapGet("/health", GetHealthAsync).AllowAnonymous();
 
         var api = endpoints.MapGroup("/api/v1");
@@ -42,6 +50,100 @@ public static class RegistryEndpoints
             return Results.NoContent();
         });
 
+        if (featureOptions.IpManagementEnabled)
+        {
+            var ipAdminApi = api.MapGroup("/ip-addresses");
+
+            ipAdminApi.MapGet("", async (RegistryDatabase database, CancellationToken token) =>
+                Results.Ok(await database.ListIpInventoryAsync(token)));
+            ipAdminApi.MapPost("/ping", async (
+                HttpContext context,
+                IpPingService pingService,
+                CancellationToken token) =>
+                Results.Ok(await pingService.RunScanAsync(GetActor(context), token)));
+            ipAdminApi.MapPost("/{ipAddress}/ping", async (
+                string ipAddress,
+                HttpContext context,
+                IpPingService pingService,
+                CancellationToken token) =>
+                Results.Ok(await pingService.RunSinglePingAsync(ipAddress, GetActor(context), token)));
+            ipAdminApi.MapPut("/import", async (
+                ImportIpInventoryRequest request,
+                HttpContext context,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.ImportIpInventoryAsync(
+                    request, GetActor(context), token)));
+            ipAdminApi.MapGet("/{ipAddress}", async (
+                string ipAddress,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.GetIpInventoryAsync(ipAddress, token)));
+            ipAdminApi.MapPut("/{ipAddress}", async (
+                string ipAddress,
+                UpdateIpInventoryRequest request,
+                HttpContext context,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.UpdateIpInventoryAsync(
+                    ipAddress,
+                    request,
+                    GetActor(context),
+                    token)));
+
+            var ipRequestAdminApi = api.MapGroup("/ip-requests");
+            ipRequestAdminApi.MapGet("", async (
+                string? status,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.ListIpRequestsAsync(status, token)));
+            ipRequestAdminApi.MapGet("/{requestId}", async (
+                string requestId,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.GetIpRequestAsync(requestId, token)));
+            ipRequestAdminApi.MapGet("/{requestId}/events", async (
+                string requestId,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.ListIpRequestEventsAsync(requestId, token)));
+            ipRequestAdminApi.MapPost("/{requestId}/approve", async (
+                string requestId,
+                ApproveIpRequestRequest request,
+                HttpContext context,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.ApproveIpRequestAsync(
+                    requestId, request, GetActor(context), token)));
+            ipRequestAdminApi.MapPost("/{requestId}/reject", async (
+                string requestId,
+                RejectIpRequestRequest request,
+                HttpContext context,
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.RejectIpRequestAsync(
+                    requestId, request, GetActor(context), token)));
+        }
+
+        if (featureOptions.GuestPortalEnabled)
+        {
+            var guestApi = api.MapGroup("/guest");
+            guestApi.MapGet("/ip-addresses", async (
+                RegistryDatabase database,
+                CancellationToken token) =>
+                Results.Ok(await database.ListGuestIpInventoryAsync(token)));
+            guestApi.MapPost("/ip-requests", async (
+                CreateIpRequestRequest request,
+                RegistryDatabase database,
+                CancellationToken token) =>
+            {
+                var created = await database.CreateIpRequestAsync(request, token);
+                var receipt = new GuestIpRequestReceipt(
+                    created.Id, created.IpAddress, created.Status, created.CreatedAt);
+                return Results.Created($"/api/v1/guest/ip-requests/{created.Id}", receipt);
+            }).RequireRateLimiting("guest-ip-requests");
+        }
+
         api.MapGet("/groups", async (bool? includeDisabled, RegistryDatabase database, CancellationToken token) =>
             Results.Ok(await database.ListGroupsAsync(includeDisabled ?? false, token)));
         api.MapPost("/groups", async (
@@ -71,7 +173,16 @@ public static class RegistryEndpoints
             HttpContext context,
             RegistryDatabase database,
             CancellationToken token) =>
-            Results.Ok(await database.SaveSettingAsync(key, request, GetActor(context), token)));
+        {
+            if (string.Equals(key, "ip-monitoring", StringComparison.OrdinalIgnoreCase))
+            {
+                var settings = request.Value.Deserialize<IpMonitoringSettings>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                    ?? throw new RegistryValidationException("IP monitoring settings are required.");
+                RequestValidator.Normalize(settings);
+            }
+
+            return Results.Ok(await database.SaveSettingAsync(key, request, GetActor(context), token));
+        });
 
         api.MapGet("/firmware-history", async (int? limit, RegistryDatabase database, CancellationToken token) =>
             Results.Ok(await database.ListFirmwareHistoryAsync(limit ?? 500, token)));

@@ -1,4 +1,27 @@
 :root {
+  /* Shared visual foundations. Keep page geometry in App.css. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --radius-control: var(--modus-wc-border-radius-btn, 8px);
+  --radius-surface: 8px;
+  --font-caption: var(--modus-wc-font-size-sm, 12px);
+  --font-body: var(--modus-wc-font-size-md, 14px);
+  --font-title: var(--modus-wc-font-size-xl, 18px);
+  --weight-label: var(--modus-wc-font-weight-semibold, 600);
+  --motion-fast: 160ms;
+  --motion-ease: ease;
+  --focus-ring: var(--modus-wc-color-primary, #0063a3);
+  --status-success: var(--modus-wc-color-success, #006638);
+  --status-danger: var(--modus-wc-color-error, #da212c);
+  --status-warning: var(--modus-wc-color-warning, #e49325);
+  --action-primary: var(--modus-wc-color-primary, #0063a3);
+  --action-primary-content: var(--modus-wc-color-primary-content, #ffffff);
+  --action-primary-hover: var(--modus-wc-color-blue-dark, #005487);
+  --action-danger: var(--modus-wc-color-error, #da212c);
+  --action-danger-content: var(--modus-wc-color-error-content, #ffffff);
   --app-navbar-height: 64px;
   --bg: var(--modus-wc-color-gray-01, #f5f5f8);
   --surface: var(--modus-wc-color-white, #ffffff);
@@ -36,6 +59,15 @@
 }
 
 [data-theme='modus-modern-dark'] {
+  --focus-ring: var(--modus-wc-color-primary, #019aeb);
+  --status-success: var(--modus-wc-color-success, #4ea646);
+  --status-danger: var(--modus-wc-color-error, #e86363);
+  --status-warning: var(--modus-wc-color-warning, #fec157);
+  --action-primary: var(--modus-wc-color-primary, #019aeb);
+  --action-primary-content: var(--modus-wc-color-primary-content, #000000);
+  --action-primary-hover: #018bd4;
+  --action-danger: var(--modus-wc-color-error, #e86363);
+  --action-danger-content: var(--modus-wc-color-error-content, #000000);
   --bg: var(--modus-wc-color-gray-10, #171c1e);
   --surface: var(--modus-wc-color-trimble-gray, #252a2e);
   --surface-elevated: var(--modus-wc-color-gray-9, #353a40);
@@ -88,11 +120,22 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 ::selection {
   color: #ffffff;
   background: var(--primary);
+}
+
+/* Respect reduced motion without hiding operational progress indicators. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+  }
+
+  .login-motion span {
+    animation: none;
+  }
 }

@@ -81,3 +81,38 @@ public sealed class ServerOptions
         }
     }
 }
+
+public sealed class FeatureOptions
+{
+    public const string SectionName = "Features";
+
+    public bool IpManagementEnabled { get; set; }
+
+    public bool GuestPortalEnabled { get; set; }
+
+    public void NormalizeAndValidate()
+    {
+        if (GuestPortalEnabled && !IpManagementEnabled)
+        {
+            throw new InvalidOperationException(
+                "Features:IpManagementEnabled must be enabled before the guest portal can be enabled.");
+        }
+    }
+}
+
+public sealed class IpPingOptions
+{
+    public const string SectionName = "IpPing";
+
+    public bool Enabled { get; set; } = true;
+
+    public int MaxParallelism { get; set; } = 32;
+
+    public void Validate()
+    {
+        if (MaxParallelism is < 1 or > 64)
+        {
+            throw new InvalidOperationException("IpPing:MaxParallelism must be between 1 and 64.");
+        }
+    }
+}

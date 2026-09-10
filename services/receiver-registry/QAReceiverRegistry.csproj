@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>QAReceiverRegistry</RootNamespace>
     <AssemblyName>QAReceiverRegistry</AssemblyName>
-    <Version>0.3.1</Version>
+    <Version>0.7.0</Version>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -20,5 +20,12 @@
 
   <ItemGroup>
     <Content Include="Migrations\*.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="wwwroot\guest\**\*"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\public\qa_center_icon.png"
+             Link="wwwroot\guest\qa_center_icon.png"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

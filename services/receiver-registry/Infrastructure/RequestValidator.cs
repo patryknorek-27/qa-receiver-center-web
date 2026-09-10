@@ -58,6 +58,167 @@ public static class RequestValidator
         return NormalizeGroup(request.Code, request.Name, request.Description, request.Enabled, request.RowVersion);
     }
 
+    public static NormalizedIpInventoryUpdate Normalize(string ipAddress, UpdateIpInventoryRequest request)
+    {
+        if (request.RowVersion < 1)
+        {
+            throw new RegistryValidationException("rowVersion must be greater than zero.");
+        }
+
+        var (normalizedIp, octet) = NormalizeLabIpAddressParts(ipAddress);
+        var status = (request.Status?.Trim().ToLowerInvariant()) switch
+        {
+            "unused" => "Unused",
+            "used" => "Used",
+            "reserved" => "Reserved",
+            _ => throw new RegistryValidationException("status must be Unused, Used, or Reserved."),
+        };
+        if (octet == 1 && status != "Reserved")
+        {
+            throw new RegistryValidationException("10.2.155.1 is the gateway and must remain Reserved.");
+        }
+
+        var environment = NormalizeEnvironment(request.Environment);
+
+        return new NormalizedIpInventoryUpdate(
+            normalizedIp,
+            status,
+            NormalizeOptional(request.Location, 200, "location"),
+            NormalizeOptional(request.Responsible, 200, "responsible"),
+            environment,
+            NormalizeOptional(request.DeviceType, 160, "deviceType"),
+            NormalizeOptional(request.SerialNumber, 160, "serialNumber"),
+            NormalizeOptional(request.Antenna1, 120, "antenna1"),
+            NormalizeOptional(request.Antenna2, 120, "antenna2"),
+            NormalizeOptional(request.Notes, 2000, "notes"),
+            NormalizeUsageEndDate(request.UsageEndDate, allowPast: true),
+            request.RowVersion);
+    }
+
+    public static string NormalizeLabIpAddress(string ipAddress) => NormalizeLabIpAddressParts(ipAddress).IpAddress;
+
+    public static IpMonitoringSettings Normalize(IpMonitoringSettings settings)
+    {
+        if (settings.IntervalMinutes is < 5 or > 360)
+        {
+            throw new RegistryValidationException("intervalMinutes must be between 5 and 360.");
+        }
+
+        if (settings.TimeoutMilliseconds is < 250 or > 10000)
+        {
+            throw new RegistryValidationException("timeoutMilliseconds must be between 250 and 10000.");
+        }
+
+        return settings;
+    }
+
+    public static NormalizedIpRequest Normalize(CreateIpRequestRequest request)
+    {
+        var (ipAddress, octet) = NormalizeLabIpAddressParts(request.IpAddress);
+        if (octet == 1)
+        {
+            throw new RegistryValidationException("10.2.155.1 is the gateway and cannot be requested.");
+        }
+
+        return new NormalizedIpRequest(
+            ipAddress,
+            NormalizeRequired(request.RequestedBy, 200, "requestedBy"),
+            NormalizeOptional(request.Location, 200, "location"),
+            NormalizeRequired(request.Responsible, 200, "responsible"),
+            NormalizeEnvironment(request.Environment),
+            NormalizeOptional(request.DeviceType, 160, "deviceType"),
+            NormalizeOptional(request.SerialNumber, 160, "serialNumber"),
+            NormalizeOptional(request.Antenna1, 120, "antenna1"),
+            NormalizeOptional(request.Antenna2, 120, "antenna2"),
+            NormalizeOptional(request.Notes, 200, "notes"),
+            NormalizeUsageEndDate(request.UsageEndDate, allowPast: false));
+    }
+
+    public static NormalizedIpRequestApproval Normalize(
+        string requestId,
+        string ipAddress,
+        ApproveIpRequestRequest request)
+    {
+        requestId = NormalizeRequired(requestId, 64, "requestId");
+        if (request.RequestRowVersion < 1 || request.IpRowVersion < 1)
+        {
+            throw new RegistryValidationException("Request and IP row versions must be greater than zero.");
+        }
+
+        var ipUpdate = Normalize(
+            ipAddress,
+            new UpdateIpInventoryRequest(
+                "Used",
+                request.Location,
+                request.Responsible,
+                request.Environment,
+                request.DeviceType,
+                request.SerialNumber,
+                request.Antenna1,
+                request.Antenna2,
+                request.Notes,
+                request.UsageEndDate,
+                request.IpRowVersion));
+        return new NormalizedIpRequestApproval(requestId, request.RequestRowVersion, ipUpdate);
+    }
+
+    public static NormalizedIpRequestRejection Normalize(string requestId, RejectIpRequestRequest request)
+    {
+        requestId = NormalizeRequired(requestId, 64, "requestId");
+        if (request.RowVersion < 1)
+        {
+            throw new RegistryValidationException("rowVersion must be greater than zero.");
+        }
+
+        return new NormalizedIpRequestRejection(
+            requestId,
+            NormalizeRequired(request.Reason, 500, "reason"),
+            request.RowVersion);
+    }
+
+    public static string? NormalizeIpRequestStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return null;
+        }
+
+        return status.Trim().ToLowerInvariant() switch
+        {
+            "pending" => "Pending",
+            "approved" => "Approved",
+            "rejected" => "Rejected",
+            "cancelled" => "Cancelled",
+            _ => throw new RegistryValidationException(
+                "status must be Pending, Approved, Rejected, Cancelled, or empty."),
+        };
+    }
+
+    private static string? NormalizeUsageEndDate(string? value, bool allowPast)
+    {
+        value = NormalizeOptional(value, 10, "usageEndDate");
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (!DateOnly.TryParseExact(
+                value,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var date))
+        {
+            throw new RegistryValidationException("usageEndDate must use the yyyy-MM-dd format.");
+        }
+        if (!allowPast && date < DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            throw new RegistryValidationException("usageEndDate cannot be in the past.");
+        }
+
+        return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
+
     public static NormalizedFirmwareHistory Normalize(string jobId, UpsertFirmwareHistoryRequest request)
     {
         jobId = NormalizeRequired(jobId, 120, "jobId");
@@ -152,6 +313,24 @@ public static class RequestValidator
             rowVersion);
     }
 
+    private static (string IpAddress, int Octet) NormalizeLabIpAddressParts(string ipAddress)
+    {
+        ipAddress = ipAddress?.Trim() ?? string.Empty;
+        if (!IPAddress.TryParse(ipAddress, out var parsed) ||
+            parsed.AddressFamily != AddressFamily.InterNetwork)
+        {
+            throw new RegistryValidationException("ipAddress must be a valid IPv4 address.");
+        }
+
+        var bytes = parsed.GetAddressBytes();
+        if (bytes[0] != 10 || bytes[1] != 2 || bytes[2] != 155 || bytes[3] is < 1 or > 254)
+        {
+            throw new RegistryValidationException("ipAddress must be between 10.2.155.1 and 10.2.155.254.");
+        }
+
+        return (parsed.ToString(), bytes[3]);
+    }
+
     private static NormalizedGroup NormalizeGroup(
         string code,
         string name,
@@ -194,6 +373,21 @@ public static class RequestValidator
         }
 
         return value;
+    }
+
+    private static string? NormalizeEnvironment(string? value)
+    {
+        var environment = NormalizeOptional(value, 80, "environment");
+        return environment?.ToLowerInvariant() switch
+        {
+            null => null,
+            "production" => "Production",
+            "development" => "Development",
+            "testing/lab" => "Testing/Lab",
+            "staging" => "Staging",
+            _ => throw new RegistryValidationException(
+                "environment must be Production, Development, Testing/Lab, Staging, or empty."),
+        };
     }
 
     private static string NormalizeRequired(string? value, int maximumLength, string fieldName)
@@ -281,3 +475,40 @@ public sealed record NormalizedFirmwareHistory(
     string Result,
     string? FinalFirmwareVersion,
     IReadOnlyList<string> Errors);
+
+public sealed record NormalizedIpInventoryUpdate(
+    string IpAddress,
+    string Status,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    long RowVersion);
+
+public sealed record NormalizedIpRequest(
+    string IpAddress,
+    string RequestedBy,
+    string? Location,
+    string Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate);
+
+public sealed record NormalizedIpRequestApproval(
+    string RequestId,
+    long RequestRowVersion,
+    NormalizedIpInventoryUpdate IpUpdate);
+
+public sealed record NormalizedIpRequestRejection(
+    string RequestId,
+    string Reason,
+    long RowVersion);

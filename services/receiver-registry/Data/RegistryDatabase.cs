@@ -265,6 +265,482 @@ public sealed class RegistryDatabase
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<IpInventoryRecord>> ListIpInventoryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT ip_address, sort_order, status, location, responsible, environment,
+                   device_type, serial_number, antenna_1, antenna_2, notes, usage_end_date,
+                   is_online, last_ping_at, row_version,
+                   created_by, updated_by, created_at, updated_at
+            FROM ip_inventory
+            ORDER BY sort_order;
+            """;
+        var records = new List<IpInventoryRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(ReadIpInventory(reader));
+        }
+
+        return records;
+    }
+
+    public async Task<IpInventoryRecord> GetIpInventoryAsync(
+        string ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        ipAddress = RequestValidator.NormalizeLabIpAddress(ipAddress);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        return await FindIpInventoryAsync(connection, null, ipAddress, cancellationToken)
+            ?? throw new EntityNotFoundException($"IP address {ipAddress} was not found.");
+    }
+
+    public async Task<IpInventoryRecord> UpdateIpInventoryAsync(
+        string ipAddress,
+        UpdateIpInventoryRequest request,
+        string actor,
+        CancellationToken cancellationToken = default)
+    {
+        var value = RequestValidator.Normalize(ipAddress, request);
+        actor = NormalizeActor(actor);
+        var now = UtcNowText();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var changed = await ExecuteNonQueryAsync(
+            connection,
+            transaction,
+            """
+            UPDATE ip_inventory
+            SET status = $status,
+                location = $location,
+                responsible = $responsible,
+                environment = $environment,
+                device_type = $deviceType,
+                serial_number = $serialNumber,
+                antenna_1 = $antenna1,
+                antenna_2 = $antenna2,
+                notes = $notes,
+                usage_end_date = $usageEndDate,
+                row_version = row_version + 1,
+                updated_by = $actor,
+                updated_at = $now
+            WHERE ip_address = $ipAddress AND row_version = $rowVersion;
+            """,
+            cancellationToken,
+            ("$ipAddress", value.IpAddress), ("$status", value.Status),
+            ("$location", value.Location), ("$responsible", value.Responsible),
+            ("$environment", value.Environment), ("$deviceType", value.DeviceType),
+            ("$serialNumber", value.SerialNumber), ("$antenna1", value.Antenna1),
+            ("$antenna2", value.Antenna2), ("$notes", value.Notes),
+            ("$usageEndDate", value.UsageEndDate),
+            ("$rowVersion", value.RowVersion), ("$actor", actor), ("$now", now));
+        if (changed == 0)
+        {
+            await ThrowIpInventoryNotFoundOrConflictAsync(
+                connection,
+                transaction,
+                value.IpAddress,
+                cancellationToken);
+        }
+
+        await WriteAuditAsync(
+            connection,
+            transaction,
+            "ip-address",
+            value.IpAddress,
+            "updated",
+            actor,
+            value,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetIpInventoryAsync(value.IpAddress, cancellationToken);
+    }
+
+    public async Task SaveIpPingResultsAsync(
+        IReadOnlyList<IpPingResult> results,
+        CancellationToken cancellationToken = default)
+    {
+        if (results.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var result in results)
+        {
+            var ipAddress = RequestValidator.NormalizeLabIpAddress(result.IpAddress);
+            var changed = await ExecuteNonQueryAsync(
+                connection,
+                transaction,
+                """
+                UPDATE ip_inventory
+                SET is_online = $isOnline,
+                    last_ping_at = $checkedAt
+                WHERE ip_address = $ipAddress;
+                """,
+                cancellationToken,
+                ("$ipAddress", ipAddress),
+                ("$isOnline", result.IsOnline ? 1 : 0),
+                ("$checkedAt", FormatTimestamp(result.CheckedAt)));
+            if (changed != 1)
+            {
+                throw new EntityNotFoundException($"IP address {ipAddress} was not found.");
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<IpInventoryImportResult> ImportIpInventoryAsync(
+        ImportIpInventoryRequest request,
+        string actor,
+        CancellationToken cancellationToken = default)
+    {
+        var items = request.Items ?? [];
+        if (items.Count != 253)
+        {
+            throw new RegistryValidationException(
+                $"The IP inventory import received {items.Count} records. It must contain every address from 10.2.155.2 to 10.2.155.254.");
+        }
+
+        var values = items.Select(item => RequestValidator.Normalize(
+                item.IpAddress,
+                new UpdateIpInventoryRequest(
+                    item.Status, item.Location, item.Responsible, item.Environment,
+                    item.DeviceType, item.SerialNumber, item.Antenna1, item.Antenna2,
+                    item.Notes, item.UsageEndDate, item.RowVersion)))
+            .OrderBy(item => int.Parse(item.IpAddress.Split('.')[3], CultureInfo.InvariantCulture))
+            .ToArray();
+        var expectedAddresses = Enumerable.Range(2, 253).Select(octet => $"10.2.155.{octet}").ToArray();
+        if (!values.Select(item => item.IpAddress).SequenceEqual(expectedAddresses, StringComparer.Ordinal))
+        {
+            throw new RegistryValidationException(
+                "The IP inventory import contains duplicate or missing addresses.");
+        }
+
+        actor = NormalizeActor(actor);
+        var backup = await CreateBackupAsync(cancellationToken);
+        var now = UtcNowText();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var value in values)
+        {
+            var changed = await ExecuteNonQueryAsync(
+                connection,
+                transaction,
+                """
+                UPDATE ip_inventory
+                SET status = $status, location = $location, responsible = $responsible,
+                    environment = $environment, device_type = $deviceType,
+                    serial_number = $serialNumber, antenna_1 = $antenna1, antenna_2 = $antenna2,
+                    notes = $notes, usage_end_date = $usageEndDate,
+                    row_version = row_version + 1, updated_by = $actor, updated_at = $now
+                WHERE ip_address = $ipAddress AND row_version = $rowVersion;
+                """,
+                cancellationToken,
+                ("$ipAddress", value.IpAddress), ("$status", value.Status),
+                ("$location", value.Location), ("$responsible", value.Responsible),
+                ("$environment", value.Environment), ("$deviceType", value.DeviceType),
+                ("$serialNumber", value.SerialNumber), ("$antenna1", value.Antenna1),
+                ("$antenna2", value.Antenna2), ("$notes", value.Notes),
+                ("$usageEndDate", value.UsageEndDate),
+                ("$rowVersion", value.RowVersion), ("$actor", actor), ("$now", now));
+            if (changed == 0)
+            {
+                await ThrowIpInventoryNotFoundOrConflictAsync(
+                    connection, transaction, value.IpAddress, cancellationToken);
+            }
+
+            await WriteAuditAsync(
+                connection, transaction, "ip-address", value.IpAddress,
+                "imported", actor, value, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new IpInventoryImportResult(values.Length, backup);
+    }
+
+    public async Task<IReadOnlyList<GuestIpInventoryRecord>> ListGuestIpInventoryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT i.ip_address, i.sort_order, i.status, i.location, i.responsible,
+                   i.environment, i.device_type, i.serial_number, i.antenna_1, i.antenna_2,
+                   i.notes, i.usage_end_date,
+                   EXISTS(
+                       SELECT 1 FROM ip_requests r
+                       WHERE r.ip_address = i.ip_address AND r.status = 'Pending'
+                   ),
+                   i.status = 'Unused' AND COALESCE(i.is_online, 0) = 0 AND NOT EXISTS(
+                       SELECT 1 FROM ip_requests r
+                       WHERE r.ip_address = i.ip_address AND r.status = 'Pending'
+                   )
+            FROM ip_inventory i
+            ORDER BY i.sort_order;
+            """;
+        var records = new List<GuestIpInventoryRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(new GuestIpInventoryRecord(
+                reader.GetString(0), reader.GetInt32(1), reader.GetString(2),
+                GetNullableString(reader, 3), GetNullableString(reader, 4),
+                GetNullableString(reader, 5), GetNullableString(reader, 6),
+                GetNullableString(reader, 7), GetNullableString(reader, 8),
+                GetNullableString(reader, 9), GetNullableString(reader, 10),
+                GetNullableString(reader, 11), reader.GetInt64(12) == 1,
+                reader.GetInt64(13) == 1));
+        }
+
+        return records;
+    }
+
+    public async Task<IReadOnlyList<IpRequestRecord>> ListIpRequestsAsync(
+        string? status,
+        CancellationToken cancellationToken = default)
+    {
+        status = RequestValidator.NormalizeIpRequestStatus(status);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, ip_address, requested_by, location, responsible, environment,
+                   device_type, serial_number, antenna_1, antenna_2, notes, usage_end_date,
+                   status, decision_by, decision_reason,
+                   decided_at, row_version, created_at, updated_at
+            FROM ip_requests
+            WHERE $status IS NULL OR status = $status
+            ORDER BY CASE WHEN status = 'Pending' THEN 0 ELSE 1 END, created_at DESC;
+            """;
+        command.Parameters.AddWithValue("$status", (object?)status ?? DBNull.Value);
+        var records = new List<IpRequestRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(ReadIpRequest(reader));
+        }
+
+        return records;
+    }
+
+    public async Task<IpRequestRecord> GetIpRequestAsync(
+        string requestId,
+        CancellationToken cancellationToken = default)
+    {
+        requestId = NormalizeRequestId(requestId);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        return await FindIpRequestAsync(connection, null, requestId, cancellationToken)
+            ?? throw new EntityNotFoundException($"IP request {requestId} was not found.");
+    }
+
+    public async Task<IReadOnlyList<IpRequestEventRecord>> ListIpRequestEventsAsync(
+        string requestId,
+        CancellationToken cancellationToken = default)
+    {
+        requestId = NormalizeRequestId(requestId);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        if (await FindIpRequestAsync(connection, null, requestId, cancellationToken) is null)
+        {
+            throw new EntityNotFoundException($"IP request {requestId} was not found.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, request_id, action, actor, details_json, created_at
+            FROM ip_request_events
+            WHERE request_id = $requestId
+            ORDER BY id;
+            """;
+        command.Parameters.AddWithValue("$requestId", requestId);
+        var events = new List<IpRequestEventRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            JsonElement? details = reader.IsDBNull(4)
+                ? null
+                : JsonSerializer.Deserialize<JsonElement>(reader.GetString(4));
+            events.Add(new IpRequestEventRecord(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), details, ParseTimestamp(reader.GetString(5))));
+        }
+
+        return events;
+    }
+
+    public async Task<IpRequestRecord> CreateIpRequestAsync(
+        CreateIpRequestRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var value = RequestValidator.Normalize(request);
+        var requestId = Guid.NewGuid().ToString("N");
+        var now = UtcNowText();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var inserted = await ExecuteNonQueryAsync(
+                connection,
+                transaction,
+                """
+                INSERT INTO ip_requests
+                    (id, ip_address, requested_by, location, responsible, environment,
+                     device_type, serial_number, antenna_1, antenna_2, notes, usage_end_date,
+                     status, decision_by, decision_reason,
+                     decided_at, row_version, created_at, updated_at)
+                SELECT $id, ip_address, $requestedBy, $location, $responsible, $environment,
+                       $deviceType, $serialNumber, $antenna1, $antenna2, $notes, $usageEndDate,
+                       'Pending', NULL, NULL, NULL, 1, $now, $now
+                FROM ip_inventory
+                WHERE ip_address = $ipAddress
+                  AND status = 'Unused'
+                  AND COALESCE(is_online, 0) = 0;
+                """,
+                cancellationToken,
+                ("$id", requestId), ("$ipAddress", value.IpAddress),
+                ("$requestedBy", value.RequestedBy), ("$location", value.Location),
+                ("$responsible", value.Responsible), ("$environment", value.Environment),
+                ("$deviceType", value.DeviceType), ("$serialNumber", value.SerialNumber),
+                ("$antenna1", value.Antenna1), ("$antenna2", value.Antenna2),
+                ("$notes", value.Notes), ("$usageEndDate", value.UsageEndDate), ("$now", now));
+            if (inserted == 0)
+            {
+                throw new ConcurrencyConflictException(
+                    $"IP address {value.IpAddress} is not available for a request.");
+            }
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            throw new DuplicateEntityException(
+                $"A pending request already exists for IP address {value.IpAddress}.");
+        }
+
+        await WriteIpRequestEventAsync(
+            connection, transaction, requestId, "Created", value.RequestedBy, value, cancellationToken);
+        await WriteAuditAsync(
+            connection, transaction, "ip-request", requestId, "created", value.RequestedBy, value, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetIpRequestAsync(requestId, cancellationToken);
+    }
+
+    public async Task<IpRequestRecord> ApproveIpRequestAsync(
+        string requestId,
+        ApproveIpRequestRequest request,
+        string actor,
+        CancellationToken cancellationToken = default)
+    {
+        requestId = NormalizeRequestId(requestId);
+        actor = NormalizeActor(actor);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var currentRequest = await FindIpRequestAsync(connection, transaction, requestId, cancellationToken)
+            ?? throw new EntityNotFoundException($"IP request {requestId} was not found.");
+        var value = RequestValidator.Normalize(requestId, currentRequest.IpAddress, request);
+        if (!string.Equals(currentRequest.Status, "Pending", StringComparison.Ordinal))
+        {
+            throw new ConcurrencyConflictException("The IP request has already been completed.");
+        }
+
+        var now = UtcNowText();
+        var ipChanged = await ExecuteNonQueryAsync(
+            connection,
+            transaction,
+            """
+            UPDATE ip_inventory
+            SET status = 'Used', location = $location, responsible = $responsible,
+                environment = $environment, device_type = $deviceType,
+                serial_number = $serialNumber, antenna_1 = $antenna1, antenna_2 = $antenna2,
+                notes = $notes, usage_end_date = $usageEndDate,
+                row_version = row_version + 1, updated_by = $actor, updated_at = $now
+            WHERE ip_address = $ipAddress AND status = 'Unused' AND row_version = $ipRowVersion;
+            """,
+            cancellationToken,
+            ("$ipAddress", value.IpUpdate.IpAddress), ("$location", value.IpUpdate.Location),
+            ("$responsible", value.IpUpdate.Responsible), ("$environment", value.IpUpdate.Environment),
+            ("$deviceType", value.IpUpdate.DeviceType), ("$serialNumber", value.IpUpdate.SerialNumber),
+            ("$antenna1", value.IpUpdate.Antenna1), ("$antenna2", value.IpUpdate.Antenna2),
+            ("$notes", value.IpUpdate.Notes), ("$usageEndDate", value.IpUpdate.UsageEndDate),
+            ("$ipRowVersion", value.IpUpdate.RowVersion),
+            ("$actor", actor), ("$now", now));
+        if (ipChanged == 0)
+        {
+            throw new ConcurrencyConflictException(
+                "The IP address is no longer available or was changed. Reload the request and try again.");
+        }
+
+        var requestChanged = await ExecuteNonQueryAsync(
+            connection,
+            transaction,
+            """
+            UPDATE ip_requests
+            SET status = 'Approved', decision_by = $actor, decision_reason = NULL,
+                decided_at = $now, row_version = row_version + 1, updated_at = $now
+            WHERE id = $id AND status = 'Pending' AND row_version = $rowVersion;
+            """,
+            cancellationToken,
+            ("$id", value.RequestId), ("$rowVersion", value.RequestRowVersion),
+            ("$actor", actor), ("$now", now));
+        if (requestChanged == 0)
+        {
+            throw new ConcurrencyConflictException("The IP request was changed by another user.");
+        }
+
+        await WriteIpRequestEventAsync(
+            connection, transaction, requestId, "Approved", actor, value, cancellationToken);
+        await WriteAuditAsync(
+            connection, transaction, "ip-address", value.IpUpdate.IpAddress,
+            "assigned-from-request", actor, value, cancellationToken);
+        await WriteAuditAsync(
+            connection, transaction, "ip-request", requestId, "approved", actor, value, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetIpRequestAsync(requestId, cancellationToken);
+    }
+
+    public async Task<IpRequestRecord> RejectIpRequestAsync(
+        string requestId,
+        RejectIpRequestRequest request,
+        string actor,
+        CancellationToken cancellationToken = default)
+    {
+        var value = RequestValidator.Normalize(requestId, request);
+        actor = NormalizeActor(actor);
+        var now = UtcNowText();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var changed = await ExecuteNonQueryAsync(
+            connection,
+            transaction,
+            """
+            UPDATE ip_requests
+            SET status = 'Rejected', decision_by = $actor, decision_reason = $reason,
+                decided_at = $now, row_version = row_version + 1, updated_at = $now
+            WHERE id = $id AND status = 'Pending' AND row_version = $rowVersion;
+            """,
+            cancellationToken,
+            ("$id", value.RequestId), ("$rowVersion", value.RowVersion),
+            ("$actor", actor), ("$reason", value.Reason), ("$now", now));
+        if (changed == 0)
+        {
+            await ThrowIpRequestNotFoundOrConflictAsync(
+                connection, transaction, value.RequestId, cancellationToken);
+        }
+
+        await WriteIpRequestEventAsync(
+            connection, transaction, value.RequestId, "Rejected", actor, value, cancellationToken);
+        await WriteAuditAsync(
+            connection, transaction, "ip-request", value.RequestId, "rejected", actor, value, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetIpRequestAsync(value.RequestId, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<GroupSummary>> ListGroupsAsync(
         bool includeDisabled,
         CancellationToken cancellationToken = default)
@@ -932,7 +1408,18 @@ public sealed class RegistryDatabase
         var integrity = await ExecuteScalarStringAsync(connection, "PRAGMA quick_check;", cancellationToken);
         var schemaVersion = await ExecuteScalarLongAsync(connection, "SELECT COALESCE(MAX(version), 0) FROM _schema_migrations;", cancellationToken);
         var receiverCount = await ExecuteScalarLongAsync(connection, "SELECT COUNT(*) FROM receivers;", cancellationToken);
-        return new DatabaseStatus(sqliteVersion, checked((int)schemaVersion), receiverCount, integrity);
+        var ipAddressCount = await ExecuteScalarLongAsync(connection, "SELECT COUNT(*) FROM ip_inventory;", cancellationToken);
+        var pendingIpRequestCount = await ExecuteScalarLongAsync(
+            connection,
+            "SELECT COUNT(*) FROM ip_requests WHERE status = 'Pending';",
+            cancellationToken);
+        return new DatabaseStatus(
+            sqliteVersion,
+            checked((int)schemaVersion),
+            receiverCount,
+            ipAddressCount,
+            pendingIpRequestCount,
+            integrity);
     }
 
     public async Task<BackupResult> CreateBackupAsync(CancellationToken cancellationToken = default)
@@ -1094,6 +1581,126 @@ public sealed class RegistryDatabase
         return await reader.ReadAsync(cancellationToken) ? ReadReceiver(reader, []) : null;
     }
 
+    private static async Task<IpInventoryRecord?> FindIpInventoryAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string ipAddress,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT ip_address, sort_order, status, location, responsible, environment,
+                   device_type, serial_number, antenna_1, antenna_2, notes, usage_end_date,
+                   is_online, last_ping_at, row_version,
+                   created_by, updated_by, created_at, updated_at
+            FROM ip_inventory
+            WHERE ip_address = $ipAddress;
+            """;
+        command.Parameters.AddWithValue("$ipAddress", ipAddress);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadIpInventory(reader) : null;
+    }
+
+    private static IpInventoryRecord ReadIpInventory(SqliteDataReader reader)
+    {
+        return new IpInventoryRecord(
+            reader.GetString(0),
+            reader.GetInt32(1),
+            reader.GetString(2),
+            GetNullableString(reader, 3),
+            GetNullableString(reader, 4),
+            GetNullableString(reader, 5),
+            GetNullableString(reader, 6),
+            GetNullableString(reader, 7),
+            GetNullableString(reader, 8),
+            GetNullableString(reader, 9),
+            GetNullableString(reader, 10),
+            GetNullableString(reader, 11),
+            reader.IsDBNull(12) ? null : reader.GetInt64(12) == 1,
+            reader.IsDBNull(13) ? null : ParseTimestamp(reader.GetString(13)),
+            reader.GetInt64(14),
+            reader.GetString(15),
+            reader.GetString(16),
+            ParseTimestamp(reader.GetString(17)),
+            ParseTimestamp(reader.GetString(18)));
+    }
+
+    private static async Task<IpRequestRecord?> FindIpRequestAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT id, ip_address, requested_by, location, responsible, environment,
+                   device_type, serial_number, antenna_1, antenna_2, notes, usage_end_date,
+                   status, decision_by, decision_reason,
+                   decided_at, row_version, created_at, updated_at
+            FROM ip_requests
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", requestId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadIpRequest(reader) : null;
+    }
+
+    private static IpRequestRecord ReadIpRequest(SqliteDataReader reader)
+    {
+        return new IpRequestRecord(
+            reader.GetString(0), reader.GetString(1), reader.GetString(2),
+            GetNullableString(reader, 3), GetNullableString(reader, 4),
+            GetNullableString(reader, 5), GetNullableString(reader, 6),
+            GetNullableString(reader, 7), GetNullableString(reader, 8),
+            GetNullableString(reader, 9), GetNullableString(reader, 10),
+            GetNullableString(reader, 11), reader.GetString(12),
+            GetNullableString(reader, 13), GetNullableString(reader, 14),
+            reader.IsDBNull(15) ? null : ParseTimestamp(reader.GetString(15)),
+            reader.GetInt64(16), ParseTimestamp(reader.GetString(17)),
+            ParseTimestamp(reader.GetString(18)));
+    }
+
+    private static async Task ThrowIpRequestNotFoundOrConflictAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        if (await FindIpRequestAsync(connection, transaction, requestId, cancellationToken) is null)
+        {
+            throw new EntityNotFoundException($"IP request {requestId} was not found.");
+        }
+
+        throw new ConcurrencyConflictException(
+            "The IP request was completed or changed by another user. Reload it and try again.");
+    }
+
+    private static Task<int> WriteIpRequestEventAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string requestId,
+        string action,
+        string actor,
+        object details,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteNonQueryAsync(
+            connection,
+            transaction,
+            """
+            INSERT INTO ip_request_events (request_id, action, actor, details_json, created_at)
+            VALUES ($requestId, $action, $actor, $detailsJson, $createdAt);
+            """,
+            cancellationToken,
+            ("$requestId", requestId), ("$action", action),
+            ("$actor", NormalizeActor(actor)), ("$detailsJson", JsonSerializer.Serialize(details)),
+            ("$createdAt", UtcNowText()));
+    }
+
     private static ReceiverRecord ReadReceiver(SqliteDataReader reader, IReadOnlyList<GroupSummary> groups)
     {
         return new ReceiverRecord(
@@ -1101,6 +1708,31 @@ public sealed class RegistryDatabase
             GetNullableString(reader, 3), GetNullableString(reader, 4), GetNullableString(reader, 5),
             GetNullableString(reader, 6), reader.GetInt64(7) == 1, reader.GetInt64(8),
             ParseTimestamp(reader.GetString(9)), ParseTimestamp(reader.GetString(10)), groups);
+    }
+
+    private static async Task ThrowIpInventoryNotFoundOrConflictAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string ipAddress,
+        CancellationToken cancellationToken)
+    {
+        if (await FindIpInventoryAsync(connection, transaction, ipAddress, cancellationToken) is null)
+        {
+            throw new EntityNotFoundException($"IP address {ipAddress} was not found.");
+        }
+
+        throw new ConcurrencyConflictException("The IP record was changed by another user. Reload it and try again.");
+    }
+
+    private static string NormalizeRequestId(string requestId)
+    {
+        requestId = requestId?.Trim() ?? string.Empty;
+        if (requestId.Length is < 1 or > 64 || requestId.Any(character => !char.IsAsciiLetterOrDigit(character)))
+        {
+            throw new RegistryValidationException("requestId must contain 1-64 letters or numbers.");
+        }
+
+        return requestId;
     }
 
     private static async Task<SettingRecord?> FindSettingAsync(

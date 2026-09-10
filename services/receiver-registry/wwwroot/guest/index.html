@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>QA 155 LAN Monitoring</title>
+    <link rel="icon" href="./qa_center_icon.png" />
+    <link rel="stylesheet" href="./guest.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <img src="./qa_center_icon.png" alt="" />
+        <div>
+          <strong>QA 155 LAN Monitoring</strong>
+          <span>Trimble internal network</span>
+        </div>
+      </div>
+      <button id="refresh-button" class="secondary-button" type="button">Refresh</button>
+    </header>
+
+    <main>
+      <section class="summary" aria-label="IP address summary">
+        <div><span>Total</span><strong id="total-count">0</strong></div>
+        <div><span>Used</span><strong id="used-count">0</strong></div>
+        <div><span>Available</span><strong id="unused-count">0</strong></div>
+        <div><span>Reserved</span><strong id="reserved-count">0</strong></div>
+      </section>
+
+      <section class="directory">
+        <div class="toolbar">
+          <label class="search-field">
+            <span class="visually-hidden">Search IP addresses</span>
+            <input id="search-input" type="search" placeholder="Search IP, device, serial number or responsible person" />
+          </label>
+          <div class="filters" role="group" aria-label="Filter by status">
+            <button type="button" data-status="all" class="active">All</button>
+            <button type="button" data-status="Used">Used</button>
+            <button type="button" data-status="Available">Available</button>
+            <button type="button" data-status="Reserved">Reserved</button>
+          </div>
+          <span id="result-count" class="result-count">0 addresses</span>
+        </div>
+
+        <div id="notice" class="notice" role="status" hidden></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>IP Address</th>
+                <th>Status</th>
+                <th aria-sort="none"><button class="sort-button" type="button" data-sort="location">Location<span class="sort-indicator" aria-hidden="true">&#8597;</span></button></th>
+                <th aria-sort="none"><button class="sort-button" type="button" data-sort="responsible">Responsible<span class="sort-indicator" aria-hidden="true">&#8597;</span></button></th>
+                <th>Environment</th>
+                <th aria-sort="none"><button class="sort-button" type="button" data-sort="deviceType">Device<span class="sort-indicator" aria-hidden="true">&#8597;</span></button></th>
+                <th>SN</th>
+                <th aria-sort="none"><button class="sort-button" type="button" data-sort="antennas">Antennas<span class="sort-indicator" aria-hidden="true">&#8597;</span></button></th>
+                <th aria-sort="none"><button class="sort-button" type="button" data-sort="usageEndDate">Usage period<span class="sort-indicator" aria-hidden="true">&#8597;</span></button></th>
+                <th>Notes</th>
+                <th><span class="visually-hidden">Action</span></th>
+              </tr>
+            </thead>
+            <tbody id="ip-table-body"></tbody>
+          </table>
+          <div id="empty-state" class="empty-state" hidden>No IP addresses match the selected filters.</div>
+        </div>
+      </section>
+    </main>
+
+    <div id="request-dialog" class="modal-layer" hidden>
+      <button id="modal-backdrop" class="modal-backdrop" type="button" aria-label="Close request form"></button>
+      <section class="request-modal" role="dialog" aria-modal="true" aria-labelledby="request-title">
+        <header>
+          <div>
+            <span>Assignment request</span>
+            <h2 id="request-title">Request IP</h2>
+          </div>
+          <button id="close-modal" class="icon-button" type="button" aria-label="Close">X</button>
+        </header>
+        <form id="request-form">
+          <input id="request-ip" name="ipAddress" type="hidden" />
+          <div class="form-grid">
+            <label>
+              <span>Responsible person or team</span>
+              <input name="responsible" maxlength="200" required autofocus />
+            </label>
+            <label>
+              <span>Location</span>
+              <input name="location" maxlength="200" list="location-options" />
+            </label>
+            <label>
+              <span>Environment</span>
+              <select name="environment">
+                <option value="">Not set</option>
+                <option>Production</option>
+                <option>Development</option>
+                <option>Testing/Lab</option>
+                <option>Staging</option>
+              </select>
+            </label>
+            <label>
+              <span>Device or type</span>
+              <input name="deviceType" maxlength="160" list="device-options" />
+            </label>
+            <label>
+              <span>Serial number</span>
+              <input name="serialNumber" maxlength="160" />
+            </label>
+            <label>
+              <span>Antenna 1</span>
+              <input name="antenna1" maxlength="120" />
+            </label>
+            <label>
+              <span>Antenna 2</span>
+              <input name="antenna2" maxlength="120" />
+            </label>
+            <label>
+              <span>Usage period</span>
+              <select id="usage-mode">
+                <option value="none">No end date</option>
+                <option value="date">Select end date</option>
+              </select>
+            </label>
+            <label id="usage-date-field" hidden>
+              <span>End date</span>
+              <input id="usage-end-date" name="usageEndDate" type="date" disabled />
+            </label>
+            <label class="notes-field">
+              <span>Notes</span>
+              <textarea name="notes" maxlength="200" rows="3"></textarea>
+            </label>
+          </div>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+          <footer>
+            <button id="cancel-request" class="secondary-button" type="button">Cancel</button>
+            <button id="submit-request" class="primary-button" type="submit">Send request</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <datalist id="location-options">
+      <option value="QA Lab"></option>
+      <option value="CBC Trailer"></option>
+      <option value="Automotive Lab"></option>
+      <option value="Arctic"></option>
+    </datalist>
+    <datalist id="device-options">
+      <option value="Alloy"></option><option value="NetR"></option><option value="R-Series"></option>
+      <option value="BD"></option><option value="BX"></option><option value="u-blox"></option>
+      <option value="Septentrio"></option><option value="NovAtel"></option><option value="Leica"></option>
+      <option value="Unicore"></option><option value="Allystar"></option><option value="Topcon"></option>
+      <option value="Other"></option>
+    </datalist>
+
+    <script src="./guest.js" defer></script>
+  </body>
+</html>

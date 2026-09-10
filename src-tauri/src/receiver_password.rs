@@ -34,6 +34,17 @@ enum PasswordError {
     Unsafe(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FirmwareSecurityMode {
+    PasswordProtected,
+    Unprotected,
+}
+
+struct ReadyReceiver {
+    security_mode: FirmwareSecurityMode,
+    serial: Option<String>,
+}
+
 impl fmt::Display for PasswordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -95,10 +106,10 @@ fn verify_once(rx: &ReceiverCredential, password: &str) -> Result<(), PasswordEr
     login_once(&client, rx, password, serial.as_deref())
 }
 
-fn read_ready_serial(
+fn read_ready_receiver(
     client: &Client,
     rx: &ReceiverCredential,
-) -> Result<Option<String>, PasswordError> {
+) -> Result<ReadyReceiver, PasswordError> {
     // Wait for the web interface without submitting credentials during reboot.
     // Public sysData is readiness information, never proof of authentication.
     let anonymous = client
@@ -107,7 +118,10 @@ fn read_ready_serial(
         .send()
         .map_err(transport_error)?;
     if anonymous.status() == StatusCode::UNAUTHORIZED {
-        Ok(None)
+        Ok(ReadyReceiver {
+            security_mode: FirmwareSecurityMode::PasswordProtected,
+            serial: None,
+        })
     } else {
         let text = check_response(anonymous)?.text().map_err(transport_error)?;
         let doc = roxmltree::Document::parse(&text).map_err(|_| {
@@ -121,15 +135,54 @@ fn read_ready_serial(
                 .find(|node| node.has_tag_name(name))
                 .and_then(|node| node.text())
         };
-        if field("UserSecurity") != Some("TRUE")
-            || !matches!(field("SecMode"), Some("Anon" | "Full"))
-        {
-            return Err(PasswordError::Unsafe(
-                "Receiver security mode does not support a verified password login.".into(),
-            ));
+        let user_security = field("UserSecurity").unwrap_or_default().trim();
+        let security_mode = field("SecMode").unwrap_or_default().trim();
+        if user_security.eq_ignore_ascii_case("FALSE") {
+            return Ok(ReadyReceiver {
+                security_mode: FirmwareSecurityMode::Unprotected,
+                serial: field("serial").map(str::to_string),
+            });
         }
-        Ok(field("serial").map(str::to_string))
+        if user_security.eq_ignore_ascii_case("TRUE")
+            && matches!(security_mode.to_ascii_lowercase().as_str(), "anon" | "full")
+        {
+            return Ok(ReadyReceiver {
+                security_mode: FirmwareSecurityMode::PasswordProtected,
+                serial: field("serial").map(str::to_string),
+            });
+        }
+        Err(PasswordError::Unsafe(format!(
+            "Receiver returned an unknown security state (UserSecurity={user_security}, SecMode={security_mode})."
+        )))
     }
+}
+
+fn read_ready_serial(
+    client: &Client,
+    rx: &ReceiverCredential,
+) -> Result<Option<String>, PasswordError> {
+    let ready = read_ready_receiver(client, rx)?;
+    if ready.security_mode == FirmwareSecurityMode::Unprotected {
+        return Err(PasswordError::Unsafe(
+            "Receiver security is disabled, so a password login cannot be verified.".into(),
+        ));
+    }
+    Ok(ready.serial)
+}
+
+pub(super) fn check_firmware_access(
+    rx: &ReceiverCredential,
+    password: &str,
+) -> Result<FirmwareSecurityMode, String> {
+    let client = client()
+        .map_err(|error| format!("Password security check failed for {}: {error}", rx.addr))?;
+    let ready = read_ready_receiver(&client, rx)
+        .map_err(|error| format!("Password security check failed for {}: {error}", rx.addr))?;
+    if ready.security_mode == FirmwareSecurityMode::PasswordProtected {
+        login_once(&client, rx, password, ready.serial.as_deref())
+            .map_err(|error| format!("Password verification failed for {}: {error}", rx.addr))?;
+    }
+    Ok(ready.security_mode)
 }
 
 fn login_once(
@@ -569,6 +622,12 @@ mod tests {
                 );
                 let jobs = Arc::new(Mutex::new(HashMap::from([("test-job".into(), job)])));
                 let result = check_initial_firmware_password(&jobs, "test-job", &receiver.rx);
+                if current == CONFIGURED {
+                    assert_eq!(
+                        result.as_ref().ok(),
+                        Some(&FirmwareSecurityMode::PasswordProtected)
+                    );
+                }
                 let mut jobs = jobs.lock().unwrap();
                 let job = jobs.get_mut("test-job").unwrap();
                 assert_eq!(result.is_ok(), current == CONFIGURED);
@@ -587,6 +646,44 @@ mod tests {
                 assert_eq!(state.password, current);
             }
         }
+    }
+
+    #[test]
+    fn disabled_security_skips_login_and_password_mutation_before_firmware() {
+        use super::super::{
+            check_initial_firmware_password, create_single_update_job_status, FirmwarePlanReceiver,
+        };
+
+        let receiver = ReceiverMock::new(Mode::DisabledSecurity, CONFIGURED, 0);
+        let job = create_single_update_job_status(
+            "test-job",
+            &FirmwarePlanReceiver {
+                credential: receiver.rx.clone(),
+                model: "BD940-INS".into(),
+                target_file: "argon_titan_V663_073.timg".into(),
+                target_url: "local://test".into(),
+                local_package_path: None,
+            },
+            Some("group-fw-test".into()),
+            "Test",
+        );
+        let jobs = Arc::new(Mutex::new(HashMap::from([("test-job".into(), job)])));
+
+        let mode = check_initial_firmware_password(&jobs, "test-job", &receiver.rx).unwrap();
+
+        assert_eq!(mode, FirmwareSecurityMode::Unprotected);
+        let jobs = jobs.lock().unwrap();
+        let step = jobs["test-job"]
+            .steps
+            .iter()
+            .rev()
+            .find(|step| step.state == "CheckPassword")
+            .unwrap();
+        assert_eq!(step.status, "Completed");
+        assert!(step.message.contains("security is disabled"));
+        let state = receiver.state.lock().unwrap();
+        assert_eq!(state.login_requests, 0);
+        assert_eq!(state.writes, 0);
     }
 
     #[test]

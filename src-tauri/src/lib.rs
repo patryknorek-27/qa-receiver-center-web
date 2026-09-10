@@ -9,7 +9,7 @@ use firmware_orchestrator::{
 use regex::Regex;
 use reqwest::blocking::Client;
 use reqwest::header::{CONTENT_TYPE, EXPECT};
-use reqwest::Url;
+use reqwest::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -168,6 +168,117 @@ struct RegistrySettingEnvelope<T> {
 #[serde(rename_all = "camelCase")]
 struct RegistrySettingUpdate<'a, T> {
     value: &'a T,
+    row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IpInventoryRecord {
+    ip_address: String,
+    sort_order: i32,
+    status: String,
+    location: Option<String>,
+    responsible: Option<String>,
+    environment: Option<String>,
+    device_type: Option<String>,
+    serial_number: Option<String>,
+    antenna1: Option<String>,
+    antenna2: Option<String>,
+    notes: Option<String>,
+    usage_end_date: Option<String>,
+    is_online: Option<bool>,
+    last_ping_at: Option<String>,
+    row_version: i64,
+    updated_by: String,
+    updated_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IpPingScanResult {
+    total_count: i32,
+    online_count: i32,
+    offline_count: i32,
+    started_at: String,
+    completed_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IpPingResult {
+    ip_address: String,
+    is_online: bool,
+    checked_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IpMonitoringSettings {
+    automatic_scan_enabled: bool,
+    interval_minutes: u32,
+    timeout_milliseconds: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateIpInventoryRequest {
+    status: String,
+    location: Option<String>,
+    responsible: Option<String>,
+    environment: Option<String>,
+    device_type: Option<String>,
+    serial_number: Option<String>,
+    antenna1: Option<String>,
+    antenna2: Option<String>,
+    notes: Option<String>,
+    usage_end_date: Option<String>,
+    row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IpRequestRecord {
+    id: String,
+    ip_address: String,
+    requested_by: String,
+    location: Option<String>,
+    responsible: Option<String>,
+    environment: Option<String>,
+    device_type: Option<String>,
+    serial_number: Option<String>,
+    antenna1: Option<String>,
+    antenna2: Option<String>,
+    notes: Option<String>,
+    usage_end_date: Option<String>,
+    status: String,
+    decision_by: Option<String>,
+    decision_reason: Option<String>,
+    decided_at: Option<String>,
+    row_version: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApproveIpRequestRequest {
+    location: Option<String>,
+    responsible: Option<String>,
+    environment: Option<String>,
+    device_type: Option<String>,
+    serial_number: Option<String>,
+    antenna1: Option<String>,
+    antenna2: Option<String>,
+    notes: Option<String>,
+    usage_end_date: Option<String>,
+    request_row_version: i64,
+    ip_row_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RejectIpRequestRequest {
+    reason: String,
     row_version: i64,
 }
 
@@ -3217,7 +3328,8 @@ fn run_single_local_firmware_update_job_inner(
     };
     let receiver = resolve_single_firmware_receiver(&dry_request, true)?;
 
-    check_initial_firmware_password(single_jobs, job_id, &receiver.credential)?;
+    let firmware_security_mode =
+        check_initial_firmware_password(single_jobs, job_id, &receiver.credential)?;
 
     update_single_job_step(
         single_jobs,
@@ -3376,78 +3488,96 @@ fn run_single_local_firmware_update_job_inner(
     }
 
     let temp_password = firmware_temp_password()?;
-    let recovery_receiver = receiver.credential.clone();
-    let recovery_temp_password = temp_password.clone();
-    let recovery_jobs = Arc::clone(single_jobs);
-    let recovery_job_id = job_id.to_string();
-    password_recovery_notices::arm(&receiver.credential.addr, job_id)?;
-    // Arm recovery before the write: a timeout may hide a successful password change.
-    let mut password_recovery = PasswordRecoveryGuard::new(move || {
-        update_single_job_step(
-            &recovery_jobs,
-            &recovery_job_id,
-            "RestorePassword",
-            "Running",
-            "Running",
-            "Restoring and verifying the configured receiver password.",
-        );
-        let result = restore_receiver_password_with_retry(&recovery_receiver, &recovery_temp_password)
-            .and_then(|()| password_recovery_notices::clear(&recovery_receiver.addr).map_err(|error| {
-                format!("PASSWORD RECOVERY REQUIRED for {}. The password was verified, but the recovery record could not be cleared: {error}", recovery_receiver.addr)
-            }));
-        update_single_job_step(
-            &recovery_jobs,
-            &recovery_job_id,
-            "RestorePassword",
-            if result.is_ok() {
-                "Completed"
-            } else {
-                "Failed"
-            },
-            "Running",
+    let operation_password;
+    let mut password_recovery = None;
+    if firmware_security_mode == receiver_password::FirmwareSecurityMode::PasswordProtected {
+        let recovery_receiver = receiver.credential.clone();
+        let recovery_temp_password = temp_password.clone();
+        let recovery_jobs = Arc::clone(single_jobs);
+        let recovery_job_id = job_id.to_string();
+        password_recovery_notices::arm(&receiver.credential.addr, job_id)?;
+        // Arm recovery before the write: a timeout may hide a successful password change.
+        password_recovery = Some(PasswordRecoveryGuard::new(move || {
+            update_single_job_step(
+                &recovery_jobs,
+                &recovery_job_id,
+                "RestorePassword",
+                "Running",
+                "Running",
+                "Restoring and verifying the configured receiver password.",
+            );
+            let result = restore_receiver_password_with_retry(&recovery_receiver, &recovery_temp_password)
+                .and_then(|()| password_recovery_notices::clear(&recovery_receiver.addr).map_err(|error| {
+                    format!("PASSWORD RECOVERY REQUIRED for {}. The password was verified, but the recovery record could not be cleared: {error}", recovery_receiver.addr)
+                }));
+            update_single_job_step(
+                &recovery_jobs,
+                &recovery_job_id,
+                "RestorePassword",
+                if result.is_ok() {
+                    "Completed"
+                } else {
+                    "Failed"
+                },
+                "Running",
+                result
+                    .as_ref()
+                    .err()
+                    .map(String::as_str)
+                    .unwrap_or("Configured receiver password restored and verified."),
+            );
             result
-                .as_ref()
-                .err()
-                .map(String::as_str)
-                .unwrap_or("Configured receiver password restored and verified."),
-        );
-        result
-    });
-    update_single_job_step(
-        single_jobs,
-        job_id,
-        "ChangePassword",
-        "Running",
-        "Running",
-        "Changing receiver password to the temporary firmware password.",
-    );
-    match activate_temporary_firmware_password(&receiver.credential, &temp_password) {
-        Ok(password_changed) => update_single_job_step(
+        }));
+        update_single_job_step(
             single_jobs,
             job_id,
             "ChangePassword",
-            "Completed",
             "Running",
-            if password_changed {
-                "Temporary password is active and verified for firmware upload."
-            } else {
-                "Temporary password was already active. Password recovery remains armed."
-            },
-        ),
-        Err(err) => {
-            update_single_job_step(
+            "Running",
+            "Changing receiver password to the temporary firmware password.",
+        );
+        match activate_temporary_firmware_password(&receiver.credential, &temp_password) {
+            Ok(password_changed) => update_single_job_step(
                 single_jobs,
                 job_id,
                 "ChangePassword",
-                "Failed",
-                "Failed",
-                &err,
-            );
-            let recovery_result = password_recovery.restore_now();
-            let message = recovery_result.err().unwrap_or(err);
-            complete_single_job(single_jobs, job_id, "Failed", &message);
-            return Ok(());
+                "Completed",
+                "Running",
+                if password_changed {
+                    "Temporary password is active and verified for firmware upload."
+                } else {
+                    "Temporary password was already active. Password recovery remains armed."
+                },
+            ),
+            Err(err) => {
+                update_single_job_step(
+                    single_jobs,
+                    job_id,
+                    "ChangePassword",
+                    "Failed",
+                    "Failed",
+                    &err,
+                );
+                let recovery_result = password_recovery
+                    .as_mut()
+                    .expect("protected receiver recovery guard")
+                    .restore_now();
+                let message = recovery_result.err().unwrap_or(err);
+                complete_single_job(single_jobs, job_id, "Failed", &message);
+                return Ok(());
+            }
         }
+        operation_password = temp_password.clone();
+    } else {
+        update_single_job_step(
+            single_jobs,
+            job_id,
+            "ChangePassword",
+            "Skipped",
+            "Running",
+            "Receiver security is disabled. No temporary password was set.",
+        );
+        operation_password = receiver.credential.pw.clone();
     }
 
     ensure_firmware_job_not_cancelled(control)?;
@@ -3465,7 +3595,7 @@ fn run_single_local_firmware_update_job_inner(
         let monitor_stop = Arc::clone(&upload_monitor_stop);
         let monitor_jobs = Arc::clone(single_jobs);
         let monitor_rx = receiver.credential.clone();
-        let monitor_password = temp_password.clone();
+        let monitor_password = operation_password.clone();
         let monitor_job_id = job_id.to_string();
         thread::spawn(move || {
             monitor_receiver_firmware_status_until_stop(
@@ -3478,8 +3608,12 @@ fn run_single_local_firmware_update_job_inner(
             );
         })
     };
-    let upload_result =
-        upload_local_firmware_package(&receiver.credential, file_path, &file_name, &temp_password);
+    let upload_result = upload_local_firmware_package(
+        &receiver.credential,
+        file_path,
+        &file_name,
+        &operation_password,
+    );
     upload_monitor_stop.store(true, Ordering::SeqCst);
     let _ = upload_monitor.join();
     let mut final_status = "Completed".to_string();
@@ -3517,7 +3651,7 @@ fn run_single_local_firmware_update_job_inner(
         // After upload starts, cancellation drains the active receiver through reboot and password recovery.
         match wait_for_receiver_install_live(
             &receiver.credential,
-            &temp_password,
+            &operation_password,
             single_jobs,
             control,
             job_id,
@@ -3556,42 +3690,57 @@ fn run_single_local_firmware_update_job_inner(
         );
     }
 
-    update_single_job_step(
-        single_jobs,
-        job_id,
-        "RestorePassword",
-        "Running",
-        match final_status.as_str() {
-            "Completed" => "Running",
-            "Cancelled" => "Cancelling",
-            _ => "Failed",
-        },
-        "Restoring receiver password from receiver configuration.",
-    );
-    match password_recovery.restore_now() {
-        Ok(()) => update_single_job_step(
+    if let Some(password_recovery) = password_recovery.as_mut() {
+        update_single_job_step(
             single_jobs,
             job_id,
             "RestorePassword",
-            "Completed",
+            "Running",
             match final_status.as_str() {
                 "Completed" => "Running",
                 "Cancelled" => "Cancelling",
                 _ => "Failed",
             },
-            "Receiver password was restored to the configured value.",
-        ),
-        Err(err) => {
-            final_status = "Failed".to_string();
-            update_single_job_step(
+            "Restoring receiver password from receiver configuration.",
+        );
+        match password_recovery.restore_now() {
+            Ok(()) => update_single_job_step(
                 single_jobs,
                 job_id,
                 "RestorePassword",
-                "Failed",
-                "Failed",
-                &err,
-            );
+                "Completed",
+                match final_status.as_str() {
+                    "Completed" => "Running",
+                    "Cancelled" => "Cancelling",
+                    _ => "Failed",
+                },
+                "Receiver password was restored to the configured value.",
+            ),
+            Err(err) => {
+                final_status = "Failed".to_string();
+                update_single_job_step(
+                    single_jobs,
+                    job_id,
+                    "RestorePassword",
+                    "Failed",
+                    "Failed",
+                    &err,
+                );
+            }
         }
+    } else {
+        update_single_job_step(
+            single_jobs,
+            job_id,
+            "RestorePassword",
+            "Skipped",
+            match final_status.as_str() {
+                "Completed" => "Running",
+                "Cancelled" => "Cancelling",
+                _ => "Failed",
+            },
+            "Receiver security is disabled. No password was changed, so password recovery was not required.",
+        );
     }
 
     if final_status == "Completed" {
@@ -4312,14 +4461,19 @@ fn check_initial_firmware_password(
     single_jobs: &Arc<Mutex<HashMap<String, FirmwareSingleUpdateJobStatus>>>,
     job_id: &str,
     rx: &ReceiverCredential,
-) -> Result<(), String> {
+) -> Result<receiver_password::FirmwareSecurityMode, String> {
     update_single_job_step(single_jobs, job_id, "CheckPassword", "Running", "Running",
-        "Checking the configured password using the receiver login form. No password change has been sent.");
-    match verify_receiver_password(rx, &rx.pw) {
-        Ok(()) => {
+        "Checking receiver security mode. Protected receivers use one login check; unprotected receivers do not receive login details.");
+    match receiver_password::check_firmware_access(rx, &rx.pw) {
+        Ok(receiver_password::FirmwareSecurityMode::PasswordProtected) => {
             update_single_job_step(single_jobs, job_id, "CheckPassword", "Completed", "Running",
                 "Receiver login accepted the configured password. No password change has been sent.");
-            Ok(())
+            Ok(receiver_password::FirmwareSecurityMode::PasswordProtected)
+        }
+        Ok(receiver_password::FirmwareSecurityMode::Unprotected) => {
+            update_single_job_step(single_jobs, job_id, "CheckPassword", "Completed", "Running",
+                "Receiver security is disabled. Password login, temporary password change, and password recovery will be skipped for this update.");
+            Ok(receiver_password::FirmwareSecurityMode::Unprotected)
         }
         Err(error) => {
             let message = format!("Update stopped before the password change for {}. No password change or firmware upload was sent by this job. {error}", rx.addr);
@@ -5266,7 +5420,11 @@ fn password_recovery_error(job: &FirmwareSingleUpdateJobStatus) -> Option<String
             return Some(step.message.clone());
         }
     }
-    if job.steps.iter().any(|step| step.state == "ChangePassword") {
+    if job
+        .steps
+        .iter()
+        .any(|step| step.state == "ChangePassword" && step.status != "Skipped")
+    {
         return Some(format!(
             "PASSWORD RECOVERY REQUIRED for {}. The configured password has not been verified. Stop other scripts using this receiver and check its password manually.",
             job.ip
@@ -5540,6 +5698,185 @@ fn registry_base_url() -> String {
         .unwrap_or_else(|_| RECEIVER_REGISTRY_BASE_URL.to_string())
         .trim_end_matches('/')
         .to_string()
+}
+
+fn registry_api_url(path_segments: &[&str]) -> Result<Url, String> {
+    let mut url = Url::parse(&registry_base_url())
+        .map_err(|err| format!("Receiver registry URL is invalid: {err}"))?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "Receiver registry URL cannot contain this base path.".to_string())?;
+        segments.pop_if_empty();
+        segments.extend(["api", "v1"]);
+        segments.extend(path_segments.iter().copied());
+    }
+    Ok(url)
+}
+
+fn registry_ip_admin_call<T: DeserializeOwned>(
+    method: Method,
+    url: Url,
+    body: Option<String>,
+    action: &str,
+) -> Result<T, String> {
+    let mut request = registry_http_client()?
+        .request(method, url.clone())
+        .header("X-QA-User", registry_actor());
+    if let Some(body) = body {
+        request = request.header(CONTENT_TYPE, "application/json").body(body);
+    }
+    let response = request
+        .send()
+        .map_err(|err| format!("Cannot {action} at {url}: {err}"))?;
+    if !response.status().is_success() {
+        return Err(registry_response_error(action, url.as_str(), response));
+    }
+    let response_body = response
+        .text()
+        .map_err(|err| format!("Cannot read {action} response from {url}: {err}"))?;
+    serde_json::from_str(&response_body)
+        .map_err(|err| format!("The {action} response from {url} is invalid: {err}"))
+}
+
+#[tauri::command]
+async fn get_ip_inventory() -> Result<Vec<IpInventoryRecord>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let url = registry_api_url(&["ip-addresses"])?;
+        registry_ip_admin_call(Method::GET, url, None, "read IP inventory")
+    })
+    .await
+    .map_err(|err| format!("IP inventory task stopped unexpectedly: {err}"))?
+}
+
+#[tauri::command]
+async fn update_ip_inventory(
+    ip_address: String,
+    request: UpdateIpInventoryRequest,
+) -> Result<IpInventoryRecord, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ip_address
+            .parse::<Ipv4Addr>()
+            .map_err(|_| format!("Invalid IP address: {ip_address}"))?;
+        let url = registry_api_url(&["ip-addresses", &ip_address])?;
+        let body = serde_json::to_string(&request)
+            .map_err(|err| format!("Cannot prepare IP inventory update: {err}"))?;
+        registry_ip_admin_call(Method::PUT, url, Some(body), "update IP inventory")
+    })
+    .await
+    .map_err(|err| format!("IP inventory update task stopped unexpectedly: {err}"))?
+}
+
+#[tauri::command]
+async fn run_ip_ping_scan() -> Result<IpPingScanResult, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let url = registry_api_url(&["ip-addresses", "ping"])?;
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(90))
+            .build()
+            .map_err(|err| format!("Cannot create IP ping client: {err}"))?;
+        let response = client
+            .post(url.clone())
+            .header("X-QA-User", registry_actor())
+            .send()
+            .map_err(|err| format!("Cannot run IP ping at {url}: {err}"))?;
+        if !response.status().is_success() {
+            return Err(registry_response_error(
+                "run IP ping",
+                url.as_str(),
+                response,
+            ));
+        }
+        let response_body = response
+            .text()
+            .map_err(|err| format!("Cannot read IP ping response from {url}: {err}"))?;
+        serde_json::from_str(&response_body)
+            .map_err(|err| format!("The IP ping response from {url} is invalid: {err}"))
+    })
+    .await
+    .map_err(|err| format!("IP ping task stopped unexpectedly: {err}"))?
+}
+
+#[tauri::command]
+async fn run_single_ip_ping(ip_address: String) -> Result<IpPingResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        ip_address
+            .parse::<Ipv4Addr>()
+            .map_err(|_| format!("Invalid IP address: {ip_address}"))?;
+        let url = registry_api_url(&["ip-addresses", &ip_address, "ping"])?;
+        registry_ip_admin_call(Method::POST, url, None, "ping IP address")
+    })
+    .await
+    .map_err(|err| format!("IP ping task stopped unexpectedly: {err}"))?
+}
+
+fn validate_ip_monitoring_settings(settings: &IpMonitoringSettings) -> Result<(), String> {
+    if !(5..=360).contains(&settings.interval_minutes) {
+        return Err("Scan interval must be between 5 and 360 minutes.".to_string());
+    }
+    if !(250..=10_000).contains(&settings.timeout_milliseconds) {
+        return Err("Ping timeout must be between 250 and 10000 milliseconds.".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_ip_monitoring_settings() -> Result<IpMonitoringSettings, String> {
+    let envelope = read_registry_setting::<IpMonitoringSettings>("ip-monitoring")?;
+    validate_ip_monitoring_settings(&envelope.value)?;
+    Ok(envelope.value)
+}
+
+#[tauri::command]
+fn save_ip_monitoring_settings(
+    settings: IpMonitoringSettings,
+) -> Result<IpMonitoringSettings, String> {
+    validate_ip_monitoring_settings(&settings)?;
+    save_registry_setting("ip-monitoring", &settings)
+}
+
+#[tauri::command]
+async fn get_ip_requests(status: Option<String>) -> Result<Vec<IpRequestRecord>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut url = registry_api_url(&["ip-requests"])?;
+        if let Some(status) = status.filter(|value| !value.trim().is_empty()) {
+            url.query_pairs_mut().append_pair("status", status.trim());
+        }
+        registry_ip_admin_call(Method::GET, url, None, "read IP requests")
+    })
+    .await
+    .map_err(|err| format!("IP request task stopped unexpectedly: {err}"))?
+}
+
+#[tauri::command]
+async fn approve_ip_request(
+    request_id: String,
+    request: ApproveIpRequestRequest,
+) -> Result<IpRequestRecord, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = registry_api_url(&["ip-requests", &request_id, "approve"])?;
+        let body = serde_json::to_string(&request)
+            .map_err(|err| format!("Cannot prepare IP request approval: {err}"))?;
+        registry_ip_admin_call(Method::POST, url, Some(body), "approve IP request")
+    })
+    .await
+    .map_err(|err| format!("IP request approval task stopped unexpectedly: {err}"))?
+}
+
+#[tauri::command]
+async fn reject_ip_request(
+    request_id: String,
+    request: RejectIpRequestRequest,
+) -> Result<IpRequestRecord, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = registry_api_url(&["ip-requests", &request_id, "reject"])?;
+        let body = serde_json::to_string(&request)
+            .map_err(|err| format!("Cannot prepare IP request rejection: {err}"))?;
+        registry_ip_admin_call(Method::POST, url, Some(body), "reject IP request")
+    })
+    .await
+    .map_err(|err| format!("IP request rejection task stopped unexpectedly: {err}"))?
 }
 
 fn registry_actor() -> String {
@@ -6807,8 +7144,17 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_receivers_config,
             scan_receivers,
+            get_ip_inventory,
+            update_ip_inventory,
+            run_ip_ping_scan,
+            run_single_ip_ping,
+            get_ip_requests,
+            approve_ip_request,
+            reject_ip_request,
             get_update_safety_settings,
             save_update_safety_settings,
+            get_ip_monitoring_settings,
+            save_ip_monitoring_settings,
             authenticate_operator,
             open_receiver,
             get_receiver_login_details,
@@ -6951,6 +7297,30 @@ mod tests {
         finish_single_job(&mut job, "Completed", "Done");
         assert_eq!(job.status, "Failed");
         assert!(job.message.starts_with("PASSWORD RECOVERY REQUIRED"));
+    }
+
+    #[test]
+    fn unprotected_receiver_can_complete_without_password_recovery() {
+        for batch in [None, Some("group-fw-test"), Some("multiple-fw-test")] {
+            let mut job = password_test_job(batch);
+            push_workflow_step(
+                &mut job.steps,
+                "ChangePassword",
+                "Skipped",
+                "Receiver security is disabled. No temporary password was set.",
+            );
+            push_workflow_step(
+                &mut job.steps,
+                "RestorePassword",
+                "Skipped",
+                "No password recovery was required.",
+            );
+
+            finish_single_job(&mut job, "Completed", "Update completed");
+
+            assert_eq!(job.status, "Completed");
+            assert!(password_recovery_error(&job).is_none());
+        }
     }
 
     #[test]

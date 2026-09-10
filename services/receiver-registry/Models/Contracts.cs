@@ -49,6 +49,151 @@ public sealed record UpdateReceiverRequest(
     long? PrimaryGroupId,
     long RowVersion);
 
+public sealed record IpInventoryRecord(
+    string IpAddress,
+    int SortOrder,
+    string Status,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    bool? IsOnline,
+    DateTimeOffset? LastPingAt,
+    long RowVersion,
+    string CreatedBy,
+    string UpdatedBy,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record UpdateIpInventoryRequest(
+    string Status,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    long RowVersion);
+
+public sealed record ImportIpInventoryItem(
+    string IpAddress,
+    string Status,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    long RowVersion);
+
+public sealed record ImportIpInventoryRequest(IReadOnlyList<ImportIpInventoryItem>? Items);
+
+public sealed record IpInventoryImportResult(int UpdatedCount, BackupResult Backup);
+
+public sealed record IpPingResult(string IpAddress, bool IsOnline, DateTimeOffset CheckedAt);
+
+public sealed record IpMonitoringSettings(
+    bool AutomaticScanEnabled,
+    int IntervalMinutes,
+    int TimeoutMilliseconds);
+
+public sealed record IpPingScanResult(
+    int TotalCount,
+    int OnlineCount,
+    int OfflineCount,
+    DateTimeOffset StartedAt,
+    DateTimeOffset CompletedAt);
+
+public sealed record GuestIpInventoryRecord(
+    string IpAddress,
+    int SortOrder,
+    string Status,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    bool RequestPending,
+    bool RequestAvailable);
+
+public sealed record IpRequestRecord(
+    string Id,
+    string IpAddress,
+    string RequestedBy,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    string Status,
+    string? DecisionBy,
+    string? DecisionReason,
+    DateTimeOffset? DecidedAt,
+    long RowVersion,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record IpRequestEventRecord(
+    long Id,
+    string RequestId,
+    string Action,
+    string Actor,
+    JsonElement? Details,
+    DateTimeOffset CreatedAt);
+
+public sealed record CreateIpRequestRequest(
+    string IpAddress,
+    string RequestedBy,
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate);
+
+public sealed record GuestIpRequestReceipt(
+    string Id,
+    string IpAddress,
+    string Status,
+    DateTimeOffset CreatedAt);
+
+public sealed record ApproveIpRequestRequest(
+    string? Location,
+    string? Responsible,
+    string? Environment,
+    string? DeviceType,
+    string? SerialNumber,
+    string? Antenna1,
+    string? Antenna2,
+    string? Notes,
+    string? UsageEndDate,
+    long RequestRowVersion,
+    long IpRowVersion);
+
+public sealed record RejectIpRequestRequest(string Reason, long RowVersion);
+
 public sealed record CreateGroupRequest(string Code, string Name, string? Description);
 
 public sealed record UpdateGroupRequest(
@@ -130,6 +275,8 @@ public sealed record DatabaseStatus(
     string SqliteVersion,
     int SchemaVersion,
     long ReceiverCount,
+    long IpAddressCount,
+    long PendingIpRequestCount,
     string IntegrityStatus);
 
 public sealed record HealthResponse(

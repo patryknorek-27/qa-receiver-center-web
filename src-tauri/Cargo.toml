@@ -1,6 +1,6 @@
 [package]
 name = "qa-receiver-center"
-version = "0.2.0"
+version = "0.3.0"
 description = "Desktop QA tool for receiver operations, diagnostics, firmware updates, and reports."
 authors = ["QA Team"]
 license = ""

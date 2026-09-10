@@ -82,6 +82,8 @@ $rollbackRoot = Join-Path $RootPath "rollback"
 $rollbackPath = Join-Path $rollbackRoot (Get-Date -Format "yyyyMMdd-HHmmss")
 New-Item -ItemType Directory -Path $rollbackPath -Force | Out-Null
 Copy-Item -Path (Join-Path $appPath "*") -Destination $rollbackPath -Recurse -Force
+$configRollbackPath = "$rollbackPath.config.json"
+Copy-Item -LiteralPath $configPath -Destination $configRollbackPath -Force
 
 Stop-Service -Name $serviceName -Force
 $deadline = (Get-Date).AddSeconds(30)
@@ -99,6 +101,40 @@ try {
     & $executablePath --config $configPath --migrate-only
     if ($LASTEXITCODE -ne 0) {
         throw "Database migration failed with exit code $LASTEXITCODE."
+    }
+
+    $updatedConfiguration = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    $configurationChanged = $false
+    if ($updatedConfiguration.Features -and
+        $updatedConfiguration.Features.PSObject.Properties.Name -contains "IpAdminKey") {
+        $updatedConfiguration.Features.PSObject.Properties.Remove("IpAdminKey")
+        $configurationChanged = $true
+    }
+
+    if (-not ($updatedConfiguration.PSObject.Properties.Name -contains "IpPing")) {
+        $updatedConfiguration | Add-Member -MemberType NoteProperty -Name "IpPing" -Value ([pscustomobject]@{
+            Enabled        = $true
+            MaxParallelism = 32
+        })
+        $configurationChanged = $true
+    }
+    elseif ($updatedConfiguration.IpPing) {
+        foreach ($obsoleteName in @("IntervalHours", "TimeoutMilliseconds")) {
+            if ($updatedConfiguration.IpPing.PSObject.Properties.Name -contains $obsoleteName) {
+                $updatedConfiguration.IpPing.PSObject.Properties.Remove($obsoleteName)
+                $configurationChanged = $true
+            }
+        }
+    }
+
+    if ($configurationChanged) {
+        $temporaryConfigPath = "$configPath.tmp"
+        $updatedJson = $updatedConfiguration | ConvertTo-Json -Depth 12
+        [IO.File]::WriteAllText(
+            $temporaryConfigPath,
+            $updatedJson,
+            (New-Object Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $temporaryConfigPath -Destination $configPath -Force
     }
 
     $health = $null
@@ -124,6 +160,7 @@ try {
 catch {
     Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
     Copy-Item -Path (Join-Path $rollbackPath "*") -Destination $appPath -Recurse -Force
+    Copy-Item -LiteralPath $configRollbackPath -Destination $configPath -Force
     Start-Service -Name $serviceName
     throw
 }

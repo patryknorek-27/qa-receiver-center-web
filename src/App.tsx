@@ -16,7 +16,13 @@ import { ModusWcNavbar, ModusWcThemeSwitcher } from '@trimble-oss/moduswebcompon
 import qaCenterIcon from './assets/qa_center_icon.png'
 import { getFirmwareWorkerCount } from './firmwareConcurrency'
 import { restoreReceiverSelection } from './firmwareSelection'
+import {
+  getGroupUpdateBlocker,
+  getMultipleUpdateBlocker,
+  getSingleUpdateBlocker,
+} from './firmwareStartBlockers'
 import PasswordRecoveryAlerts from './PasswordRecoveryAlerts'
+import IpManagementPage from './IpManagementPage'
 import {
   Activity,
   AlertTriangle,
@@ -38,6 +44,7 @@ import {
   LayoutDashboard,
   Loader2,
   Lock,
+  MapPinned,
   Minimize2,
   MoreHorizontal,
   Network,
@@ -63,8 +70,8 @@ type FirmwarePage =
   | 'FirmwareCreateGroup'
   | 'FirmwareSingle'
   | 'FirmwareMultiple'
-type SettingsPage = 'SettingsUpdateSafety'
-type Page = 'Dashboard' | 'Receivers' | FirmwarePage | SettingsPage | 'Diagnostics' | 'Reports' | 'History'
+type SettingsPage = 'SettingsUpdateSafety' | 'SettingsIpMonitoring'
+type Page = 'Dashboard' | 'Receivers' | 'IpManagement' | FirmwarePage | SettingsPage | 'Diagnostics' | 'Reports' | 'History'
 type ReceiverStatus = 'online' | 'offline' | 'pending'
 
 type Receiver = {
@@ -309,9 +316,16 @@ type UpdateSafetySettings = {
   restartCycleMinutes: number
 }
 
+type IpMonitoringSettings = {
+  automaticScanEnabled: boolean
+  intervalMinutes: number
+  timeoutMilliseconds: number
+}
+
 const navItems: Array<{ page: Page; label: string; icon: typeof LayoutDashboard }> = [
   { page: 'Dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { page: 'Receivers', label: 'Receivers', icon: Radio },
+  { page: 'IpManagement', label: 'IP Management', icon: MapPinned },
   { page: 'Diagnostics', label: 'Diagnostics', icon: Activity },
   { page: 'Reports', label: 'Reports', icon: FileText },
   { page: 'History', label: 'History', icon: History },
@@ -320,6 +334,7 @@ const navItems: Array<{ page: Page; label: string; icon: typeof LayoutDashboard 
 const pageTitles: Record<Page, string> = {
   Dashboard: 'Dashboard',
   Receivers: 'Receivers',
+  IpManagement: 'IP Management',
   FirmwareAlpha: 'Alpha Receivers',
   FirmwareBeta: 'Beta Receivers',
   FirmwareCreateGroup: 'Create New Group',
@@ -329,6 +344,7 @@ const pageTitles: Record<Page, string> = {
   Reports: 'Reports',
   History: 'History',
   SettingsUpdateSafety: 'Update Safety',
+  SettingsIpMonitoring: 'IP Monitoring',
 }
 
 const firmwarePages: FirmwarePage[] = [
@@ -338,7 +354,7 @@ const firmwarePages: FirmwarePage[] = [
   'FirmwareSingle',
   'FirmwareMultiple',
 ]
-const settingsPages: SettingsPage[] = ['SettingsUpdateSafety']
+const settingsPages: SettingsPage[] = ['SettingsUpdateSafety', 'SettingsIpMonitoring']
 
 const statusLabels: Record<ReceiverStatus, string> = {
   online: 'Online',
@@ -584,7 +600,10 @@ function App() {
   const [receiverFwFilter, setReceiverFwFilter] = useState('all')
   const [receiverFixFilter, setReceiverFixFilter] = useState('all')
   const [receiverStatusFilter, setReceiverStatusFilter] = useState('all')
+  const [pendingIpRequestCount, setPendingIpRequestCount] = useState(0)
   const isScanningRef = useRef(false)
+  const startupScanPromiseRef = useRef<Promise<boolean> | null>(null)
+  const startupRevealRequestedRef = useRef(false)
   const [logLines, setLogLines] = useState<string[]>(() => {
     const stamp = new Date().toLocaleTimeString('en-GB', { hour12: false })
     return [`[${stamp}] QA Receiver Center started`, `[${stamp}] Receiver list source: QA network config`]
@@ -593,6 +612,12 @@ function App() {
   const addLog = useCallback((message: string) => {
     const stamp = new Date().toLocaleTimeString('en-GB', { hour12: false })
     setLogLines((current) => [`[${stamp}] ${message}`, ...current].slice(0, 40))
+  }, [])
+
+  const revealApplication = useCallback(() => {
+    if (startupRevealRequestedRef.current) return
+    startupRevealRequestedRef.current = true
+    window.dispatchEvent(new Event('qa-app-ready'))
   }, [])
 
   const navigateToPage = useCallback((page: Page) => {
@@ -628,6 +653,34 @@ function App() {
     }
   }, [addLog])
 
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+
+    let active = true
+    let inFlight = false
+    const refreshPendingRequests = async () => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const pending = isTauri()
+          ? await invoke<Array<{ id: string }>>('get_ip_requests', { status: 'Pending' })
+          : [{ id: 'request-demo-1' }, { id: 'request-demo-2' }]
+        if (active) setPendingIpRequestCount(pending.length)
+      } catch {
+        // Keep the previous count while the central service is temporarily unavailable.
+      } finally {
+        inFlight = false
+      }
+    }
+
+    void refreshPendingRequests()
+    const interval = window.setInterval(() => void refreshPendingRequests(), 4_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [isAuthenticated])
+
   const handleLogin = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -646,10 +699,13 @@ function App() {
       setIsAuthenticated(true)
       setIsInitialLoading(true)
       addLog(`Signed in as ${loginUser.trim()}`)
-      await scanReceivers()
+      const initialScan = scanReceivers()
+      startupScanPromiseRef.current = initialScan
+      await initialScan
       setIsInitialLoading(false)
+      revealApplication()
     },
-    [addLog, loginPassword, loginUser, scanReceivers],
+    [addLog, loginPassword, loginUser, revealApplication, scanReceivers],
   )
 
   const openReceiver = useCallback(
@@ -710,18 +766,22 @@ function App() {
   )
 
   useEffect(() => {
-    if (!isAuthenticated || isInitialLoading || receivers.length > 0) {
+    if (!isAuthenticated) {
+      revealApplication()
       return undefined
     }
 
-    const startupScan = window.setTimeout(() => {
-      void scanReceivers(true)
-    }, 0)
-
-    return () => {
-      window.clearTimeout(startupScan)
+    if (isInitialLoading) {
+      return undefined
     }
-  }, [isAuthenticated, isInitialLoading, receivers.length, scanReceivers])
+
+    if (!startupScanPromiseRef.current) {
+      startupScanPromiseRef.current = scanReceivers(true)
+    }
+
+    void startupScanPromiseRef.current.finally(revealApplication)
+    return undefined
+  }, [isAuthenticated, isInitialLoading, revealApplication, scanReceivers])
 
   useEffect(() => {
     if (!isAuthenticated || isInitialLoading) {
@@ -811,8 +871,10 @@ function App() {
     ? 'Firmware operations'
     : isSettingsActive
       ? 'Application settings'
-      : 'Receiver operations'
-  const receiverSectionTitle = activePage === 'Dashboard' ? 'Requires Attention' : 'Receivers'
+      : activePage === 'IpManagement'
+        ? 'Network management'
+        : 'Receiver operations'
+  const receiverSectionTitle = activePage === 'Dashboard' ? 'Offline receivers' : 'Receivers'
   const receiverSectionSubtitle =
     activePage === 'Dashboard'
       ? `${offlineReceivers.length} receivers offline`
@@ -962,6 +1024,11 @@ function App() {
             >
               <item.icon size={18} />
               <span>{item.label}</span>
+              {item.page === 'IpManagement' && pendingIpRequestCount > 0 && (
+                <span className="nav-request-badge" aria-label={`${pendingIpRequestCount} pending IP requests`}>
+                  {pendingIpRequestCount > 99 ? '99+' : pendingIpRequestCount}
+                </span>
+              )}
             </button>
           ))}
 
@@ -987,6 +1054,15 @@ function App() {
                 >
                   <ShieldCheck size={15} />
                   <span>Update Safety</span>
+                </button>
+                <button
+                  className={`nav-subitem ${activePage === 'SettingsIpMonitoring' ? 'active' : ''}`}
+                  aria-label="IP Monitoring"
+                  title="IP Monitoring"
+                  onClick={() => navigateToPage('SettingsIpMonitoring')}
+                >
+                  <Activity size={15} />
+                  <span>IP Monitoring</span>
                 </button>
               </div>
             )}
@@ -1137,11 +1213,18 @@ function App() {
 
         {activePage === 'History' && <HistoryPage />}
 
+        {activePage === 'IpManagement' && (
+          <IpManagementPage onActivity={addLog} onPendingRequestCountChange={setPendingIpRequestCount} />
+        )}
+
         {activePage === 'SettingsUpdateSafety' && <UpdateSafetyPage onActivity={addLog} />}
+
+        {activePage === 'SettingsIpMonitoring' && <IpMonitoringSettingsPage onActivity={addLog} />}
 
         {activePage !== 'Dashboard' &&
           activePage !== 'Receivers' &&
           activePage !== 'History' &&
+          activePage !== 'IpManagement' &&
           !isFirmwareActive &&
           !isSettingsActive && (
           <section className="surface placeholder-surface">
@@ -1423,17 +1506,21 @@ function FirmwareModulePage({
     jobStatus?.status !== 'Completed' &&
     jobStatus?.status !== 'Failed' &&
     jobStatus?.status !== 'Cancelled'
-  const canRunPlan =
-    isGroupUpdate &&
-    selectedIps.size > 0 &&
-    !hasActiveGroupJob &&
-    (groupReleaseMode === 'catalog'
-      ? Boolean(activeSelectedReleaseId) &&
-        Boolean(activeSelectedBuildId) &&
-        catalogPackagesReady &&
-        !isCurrentBuildCatalogLoading &&
-        !isCurrentReleaseInspectionLoading
-      : groupLocalPackagesReady && !isGroupPackageLoading)
+  const groupUpdateBlocker = getGroupUpdateBlocker({
+    isGroupUpdate,
+    selectedCount: selectedIps.size,
+    hasActiveJob: hasActiveGroupJob,
+    isStarting: isJobStarting,
+    sourceMode: groupReleaseMode,
+    releaseSelected: Boolean(activeSelectedReleaseId),
+    buildSelected: Boolean(activeSelectedBuildId),
+    packagesReady: groupReleaseMode === 'catalog' ? catalogPackagesReady : groupLocalPackagesReady,
+    isPackageCheckRunning:
+      groupReleaseMode === 'catalog'
+        ? isCurrentBuildCatalogLoading || isCurrentReleaseInspectionLoading
+        : isGroupPackageLoading,
+  })
+  const canRunPlan = groupUpdateBlocker === null
   const singleReceiverOptions = useMemo(() => {
     const needle = singleReceiverIp.trim().toLowerCase()
     const exactReceiver = receivers.find((receiver) => receiver.ip.toLowerCase() === needle)
@@ -1473,28 +1560,27 @@ function FirmwareModulePage({
     activeMultipleUpdateItems.some((item) => item.ip === singleReceiverIp.trim())
   const singleCatalogPackage =
     standaloneReleaseMatchesByModel.get(effectiveSingleReceiverModel)?.selectedFile || ''
-  const canStartSingleReleaseUpdate =
-    singleSourceMode === 'release' &&
-    Boolean(selectedSingleReceiver) &&
-    RECEIVER_MODEL_OPTIONS.includes(effectiveSingleReceiverModel) &&
-    Boolean(standaloneSelectedReleaseId) &&
-    Boolean(standaloneSelectedBuildId) &&
-    Boolean(standaloneSelectedBuildMode) &&
-    Boolean(singleCatalogPackage) &&
-    !isStandaloneBuildLoading &&
-    !isStandaloneInspectionLoading &&
-    canStartAnotherSingleUpdate &&
-    !selectedReceiverHasRunningUpdate &&
-    !isSingleUpdateStarting
-  const canStartSingleLocalUpdate =
-    singleSourceMode === 'local' &&
-    Boolean(selectedSingleReceiver) &&
-    Boolean(singleFirmwareFile) &&
-    Boolean(singleFirmwareFilePath) &&
-    canStartAnotherSingleUpdate &&
-    !selectedReceiverHasRunningUpdate &&
-    !isSingleUpdateStarting &&
-    !isSingleFileLoading
+  const singleUpdateBlocker = getSingleUpdateBlocker({
+    sourceMode: singleSourceMode,
+    receiverSelected: Boolean(selectedSingleReceiver),
+    modelReady: RECEIVER_MODEL_OPTIONS.includes(effectiveSingleReceiverModel),
+    releaseSelected: Boolean(standaloneSelectedReleaseId),
+    buildSelected: Boolean(standaloneSelectedBuildId),
+    buildModeSelected: Boolean(standaloneSelectedBuildMode),
+    packageReady:
+      singleSourceMode === 'release'
+        ? Boolean(singleCatalogPackage)
+        : Boolean(singleFirmwareFile) && Boolean(singleFirmwareFilePath),
+    isPackageCheckRunning:
+      singleSourceMode === 'release'
+        ? isStandaloneBuildLoading || isStandaloneInspectionLoading
+        : isSingleFileLoading,
+    hasCapacity: canStartAnotherSingleUpdate,
+    receiverAlreadyRunning: selectedReceiverHasRunningUpdate,
+    isStarting: isSingleUpdateStarting,
+  })
+  const canStartSingleReleaseUpdate = singleSourceMode === 'release' && singleUpdateBlocker === null
+  const canStartSingleLocalUpdate = singleSourceMode === 'local' && singleUpdateBlocker === null
   const multipleReceiverOptions = useMemo(() => {
     const needle = multipleQuery.trim().toLowerCase()
     return receivers.filter((receiver) => {
@@ -1558,30 +1644,28 @@ function FirmwareModulePage({
     return []
   }, [effectiveSingleReceiverModel, multipleSelectedModels, page])
   const hasRunningMultipleBatch = multipleBatch?.status === 'Running'
-  const canStartMultipleReleaseUpdate =
-    multipleSourceMode === 'release' &&
-    multipleSelectedReceivers.length >= 2 &&
-    !multipleHasMissingModels &&
-    Boolean(standaloneSelectedReleaseId) &&
-    Boolean(standaloneSelectedBuildId) &&
-    Boolean(standaloneSelectedBuildMode) &&
-    multipleCatalogPackagesReady &&
-    !isStandaloneBuildLoading &&
-    !isStandaloneInspectionLoading &&
-    !hasRunningMultipleBatch &&
-    activeSingleUpdateJobs.length + activeMultipleUpdateItems.length < 3 &&
-    !isMultipleUpdateStarting
-  const canStartMultipleLocalUpdate =
-    multipleSourceMode === 'local' &&
-    multipleSelectedReceivers.length >= 2 &&
-    !multipleHasMissingModels &&
-    multipleSelectedModels.size === 1 &&
-    Boolean(multipleFirmwareFile) &&
-    Boolean(multipleFirmwareFilePath) &&
-    !hasRunningMultipleBatch &&
-    activeSingleUpdateJobs.length + activeMultipleUpdateItems.length < 3 &&
-    !isMultipleUpdateStarting &&
-    !isMultipleFileLoading
+  const multipleUpdateBlocker = getMultipleUpdateBlocker({
+    sourceMode: multipleSourceMode,
+    selectedCount: multipleSelectedReceivers.length,
+    modelsReady: !multipleHasMissingModels,
+    oneSharedLocalModel: multipleSelectedModels.size === 1,
+    releaseSelected: Boolean(standaloneSelectedReleaseId),
+    buildSelected: Boolean(standaloneSelectedBuildId),
+    buildModeSelected: Boolean(standaloneSelectedBuildMode),
+    packagesReady:
+      multipleSourceMode === 'release'
+        ? multipleCatalogPackagesReady
+        : Boolean(multipleFirmwareFile) && Boolean(multipleFirmwareFilePath),
+    isPackageCheckRunning:
+      multipleSourceMode === 'release'
+        ? isStandaloneBuildLoading || isStandaloneInspectionLoading
+        : isMultipleFileLoading,
+    hasRunningBatch: hasRunningMultipleBatch,
+    hasCapacity: activeSingleUpdateJobs.length + activeMultipleUpdateItems.length < 3,
+    isStarting: isMultipleUpdateStarting,
+  })
+  const canStartMultipleReleaseUpdate = multipleSourceMode === 'release' && multipleUpdateBlocker === null
+  const canStartMultipleLocalUpdate = multipleSourceMode === 'local' && multipleUpdateBlocker === null
 
   const loadReleaseCatalog = useCallback(async () => {
     if (!isTauri()) {
@@ -3611,14 +3695,23 @@ function FirmwareModulePage({
                   </button>
                 </>
               )}
-              <button
-                className="primary-button"
-                onClick={() => setIsGroupStartModalOpen(true)}
-                disabled={!canRunPlan || isJobStarting}
-              >
-                {isJobStarting ? <Loader2 className="spin" size={16} /> : <UploadCloud size={16} />}
-                Start Group Update
-              </button>
+              <div className="firmware-start-control">
+                {groupUpdateBlocker ? (
+                  <p className="firmware-start-blocker" id="group-update-blocker" role="status">
+                    <AlertTriangle size={15} />
+                    {groupUpdateBlocker}
+                  </p>
+                ) : null}
+                <button
+                  className="primary-button"
+                  onClick={() => setIsGroupStartModalOpen(true)}
+                  disabled={!canRunPlan}
+                  aria-describedby={groupUpdateBlocker ? 'group-update-blocker' : undefined}
+                >
+                  {isJobStarting ? <Loader2 className="spin" size={16} /> : <UploadCloud size={16} />}
+                  Start Group Update
+                </button>
+              </div>
             </div>
           </footer>
         </div>
@@ -3884,6 +3977,13 @@ function FirmwareModulePage({
                 </span>
               </label>
 
+              {multipleUpdateBlocker ? (
+                <p className="firmware-start-blocker" role="status">
+                  <AlertTriangle size={15} />
+                  {multipleUpdateBlocker}
+                </p>
+              ) : null}
+
               <button
                 className="primary-button full-width"
                 type="button"
@@ -4104,6 +4204,13 @@ function FirmwareModulePage({
                     <span>{activeSingleUpdateJobs.length} / 3 updates running</span>
                     {selectedReceiverHasRunningUpdate && <strong>Receiver update already in progress</strong>}
                   </div>
+
+                  {singleUpdateBlocker ? (
+                    <p className="firmware-start-blocker" role="status">
+                      <AlertTriangle size={15} />
+                      {singleUpdateBlocker}
+                    </p>
+                  ) : null}
 
                   <div className="single-source-action-grid">
                     <button
@@ -4330,11 +4437,17 @@ function FirmwareModulePage({
                 <div className="group-update-safety-note">
                   <ShieldCheck size={20} />
                   <p>
-                    Each receiver gets a configuration backup before upload. Its password is changed temporarily and
-                    restored after the receiver returns, including failure recovery paths.
+                    Each receiver gets a configuration backup before upload. Protected receivers use a temporary
+                    password with recovery after restart. Receivers with security disabled skip all password changes.
                   </p>
                 </div>
 
+                {groupUpdateBlocker ? (
+                  <p className="firmware-start-blocker modal" id="group-confirm-update-blocker" role="status">
+                    <AlertTriangle size={15} />
+                    {groupUpdateBlocker}
+                  </p>
+                ) : null}
                 <div className="credentials-actions">
                   <button className="secondary-button" type="button" onClick={() => setIsGroupStartModalOpen(false)}>
                     Cancel
@@ -4343,7 +4456,8 @@ function FirmwareModulePage({
                     className="primary-button"
                     type="button"
                     onClick={() => void prepareJob()}
-                    disabled={!canRunPlan || isJobStarting}
+                    disabled={!canRunPlan}
+                    aria-describedby={groupUpdateBlocker ? 'group-confirm-update-blocker' : undefined}
                   >
                     {isJobStarting ? <Loader2 className="spin" size={16} /> : <UploadCloud size={16} />}
                     Start Update
@@ -5344,12 +5458,24 @@ function DashboardOfflineList({
   return (
     <div className="receiver-list dashboard-receiver-list">
       {receivers.map((receiver) => (
-        <ReceiverRow
-          receiver={receiver}
-          onOpen={onOpen}
-          onShowLoginDetails={onShowLoginDetails}
-          key={receiver.ip}
-        />
+        <article className="dashboard-device" key={receiver.ip}>
+          <div className="dashboard-device-icon" aria-hidden="true"><Radio size={20} /></div>
+          <div className="dashboard-device-info">
+            <div className="dashboard-device-title">
+              <strong>{receiver.receiverName || receiver.ip}</strong>
+              <span className="dashboard-device-status">Offline</span>
+            </div>
+            <div className="dashboard-device-meta">
+              {receiver.receiverName && <span>{receiver.ip}</span>}
+              <span>Group {receiver.group}</span>
+              {receiver.firmwareVersion && <span>FW {receiver.firmwareVersion}</span>}
+            </div>
+            <p className="dashboard-device-reason" title={receiver.lastError || undefined}>
+              {receiver.lastError || 'No response during the last scan.'}
+            </p>
+          </div>
+          <ReceiverActions receiver={receiver} onOpen={onOpen} onShowLoginDetails={onShowLoginDetails} />
+        </article>
       ))}
     </div>
   )
@@ -6269,6 +6395,176 @@ function UpdateSafetyPage({ onActivity }: { onActivity: (message: string) => voi
   )
 }
 
+const DEFAULT_IP_MONITORING_SETTINGS: IpMonitoringSettings = {
+  automaticScanEnabled: true,
+  intervalMinutes: 10,
+  timeoutMilliseconds: 1000,
+}
+
+function IpMonitoringSettingsPage({ onActivity }: { onActivity: (message: string) => void }) {
+  const [settings, setSettings] = useState<IpMonitoringSettings>(DEFAULT_IP_MONITORING_SETTINGS)
+  const [savedSettings, setSavedSettings] = useState<IpMonitoringSettings>(DEFAULT_IP_MONITORING_SETTINGS)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedMessage, setSavedMessage] = useState('')
+
+  const loadSettings = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      const loaded = isTauri()
+        ? await invoke<IpMonitoringSettings>('get_ip_monitoring_settings')
+        : DEFAULT_IP_MONITORING_SETTINGS
+      setSettings(loaded)
+      setSavedSettings(loaded)
+      setSavedMessage('')
+    } catch (loadError) {
+      setError(formatError(loadError))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => {
+      void loadSettings()
+    }, 0)
+    return () => window.clearTimeout(initialLoad)
+  }, [loadSettings])
+
+  const hasChanges = JSON.stringify(settings) !== JSON.stringify(savedSettings)
+
+  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!hasChanges || isSaving) return
+    try {
+      setIsSaving(true)
+      setError('')
+      const saved = isTauri()
+        ? await invoke<IpMonitoringSettings>('save_ip_monitoring_settings', { settings })
+        : settings
+      setSettings(saved)
+      setSavedSettings(saved)
+      setSavedMessage('IP Monitoring settings saved')
+      onActivity(
+        saved.automaticScanEnabled
+          ? `Automatic IP scan enabled every ${saved.intervalMinutes} minutes`
+          : 'Automatic IP scan disabled',
+      )
+    } catch (saveError) {
+      setError(formatError(saveError))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <section className="surface ip-monitoring-settings-surface">
+      <header className="ip-monitoring-settings-header">
+        <div className="firmware-title">
+          <div className="firmware-icon"><Activity size={22} /></div>
+          <div><h2>IP Monitoring</h2></div>
+        </div>
+      </header>
+
+      <form className="ip-monitoring-settings-layout" onSubmit={saveSettings}>
+        <section className="ip-monitoring-settings-editor" aria-labelledby="ip-monitoring-title">
+          <div className="ip-monitoring-settings-heading">
+            <div>
+              <h3 id="ip-monitoring-title">Automatic IP Scan</h3>
+              <p>The server checks all IP addresses in the background. Saved changes apply without restarting the service.</p>
+            </div>
+            <label className="ip-monitoring-toggle">
+              <input
+                type="checkbox"
+                checked={settings.automaticScanEnabled}
+                onChange={(event) => {
+                  setSettings((current) => ({ ...current, automaticScanEnabled: event.target.checked }))
+                  setSavedMessage('')
+                }}
+                disabled={isLoading || isSaving}
+              />
+              <span>{settings.automaticScanEnabled ? 'Enabled' : 'Disabled'}</span>
+            </label>
+          </div>
+
+          <div className="ip-monitoring-settings-fields">
+            <label>
+              <span>Scan interval</span>
+              <select
+                value={settings.intervalMinutes}
+                onChange={(event) => {
+                  setSettings((current) => ({ ...current, intervalMinutes: Number(event.target.value) }))
+                  setSavedMessage('')
+                }}
+                disabled={isLoading || isSaving || !settings.automaticScanEnabled}
+              >
+                <option value={5}>5 minutes</option>
+                <option value={10}>10 minutes</option>
+                <option value={15}>15 minutes</option>
+                <option value={30}>30 minutes</option>
+                <option value={60}>1 hour</option>
+                <option value={360}>6 hours</option>
+              </select>
+            </label>
+            <label>
+              <span>Ping timeout</span>
+              <select
+                value={settings.timeoutMilliseconds}
+                onChange={(event) => {
+                  setSettings((current) => ({ ...current, timeoutMilliseconds: Number(event.target.value) }))
+                  setSavedMessage('')
+                }}
+                disabled={isLoading || isSaving}
+              >
+                <option value={500}>500 ms</option>
+                <option value={1000}>1000 ms</option>
+                <option value={2000}>2000 ms</option>
+                <option value={5000}>5000 ms</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="ip-monitoring-settings-note">
+            <Clock3 size={18} />
+            <span>Manual scans and the ping button for one address remain available when automatic scanning is disabled.</span>
+          </div>
+          {error && <p className="credentials-error">{error}</p>}
+        </section>
+
+        <footer className="ip-monitoring-settings-actions">
+          <span>{hasChanges ? 'Unsaved changes' : 'Settings are up to date'}</span>
+          <div>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                setSettings(DEFAULT_IP_MONITORING_SETTINGS)
+                setSavedMessage('')
+                setError('')
+              }}
+              disabled={isLoading || isSaving}
+            >
+              Restore Defaults
+            </button>
+            <button className="secondary-button" type="button" onClick={() => void loadSettings()} disabled={isLoading || isSaving}>
+              {isLoading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+              Reload
+            </button>
+            <button className="primary-button" type="submit" disabled={!hasChanges || isLoading || isSaving}>
+              {isSaving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+              Save Settings
+            </button>
+          </div>
+        </footer>
+      </form>
+
+      {savedMessage && <div className="history-download-toast">{savedMessage}</div>}
+    </section>
+  )
+}
+
 function LoginDetailsModal({
   receiver,
   password,
@@ -6397,7 +6693,7 @@ function MetricTile({
   value: number
 }) {
   return (
-    <article className="metric-tile">
+    <article className={`metric-tile metric-${tone}`}>
       <div className={`metric-icon ${tone}`}>
         <Icon size={20} />
       </div>

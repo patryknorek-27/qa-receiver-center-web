@@ -20,11 +20,11 @@ The diagram shows the main parts of the current application.
 
 ## Current Versions
 
-QA Receiver Center version: "0.2.0"
+QA Receiver Center version: "0.3.0"
 
-QA Receiver Registry service version: "0.3.1"
+QA Receiver Registry service version: "0.7.0"
 
-Database version: "3"
+Database schema version: "8"
 
 ## Main Features
 
@@ -38,12 +38,13 @@ Database version: "3"
 8. Saves firmware update history and Clone Files on the central computer.
 9. Shares Update Safety settings between users.
 10. Keeps a local copy of the latest valid data in case the central service is temporarily unavailable.
+11. Manages static IP assignments.
 
 ## How The Data Is Stored
 
 The active receiver list, passwords, and receiver groups come from "qa-receivers.json" in Azure DevOps. This file remains the main source for this information because receiver groups can change.
 
-The QA Receiver Registry stores shared settings, basic receiver information, change history, firmware update history, and Clone Files.
+The QA Receiver Registry stores shared settings, basic receiver information, static IP assignments, change history, firmware update history, and Clone Files.
 
 The editable firmware configuration is stored in:
 
