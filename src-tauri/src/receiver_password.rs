@@ -137,7 +137,9 @@ fn read_ready_receiver(
         };
         let user_security = field("UserSecurity").unwrap_or_default().trim();
         let security_mode = field("SecMode").unwrap_or_default().trim();
-        if user_security.eq_ignore_ascii_case("FALSE") {
+        // Some receivers report UserSecurity=TRUE while SecMode=Off.
+        if user_security.eq_ignore_ascii_case("FALSE") || security_mode.eq_ignore_ascii_case("Off")
+        {
             return Ok(ReadyReceiver {
                 security_mode: FirmwareSecurityMode::Unprotected,
                 serial: field("serial").map(str::to_string),
@@ -316,6 +318,7 @@ mod tests {
         LoginLostReply,
         ActivationCheckLost,
         DisabledSecurity,
+        DisabledSecurityWithUserSecurityFlag,
         RestoredLoginUnavailable,
         RestoredLoginLostReply,
         RestoredLoginLocked,
@@ -451,6 +454,8 @@ mod tests {
                             status = "401 Unauthorized";
                         } else if state.mode == Mode::DisabledSecurity {
                             body = "<data><sysData><UserSecurity>FALSE</UserSecurity><SecMode>Off</SecMode></sysData></data>";
+                        } else if state.mode == Mode::DisabledSecurityWithUserSecurityFlag {
+                            body = "<data><sysData><UserSecurity>TRUE</UserSecurity><SecMode>Off</SecMode></sysData></data>";
                         }
                     } else if state.mode == Mode::Redirect {
                         status = "302 Found";
@@ -654,36 +659,41 @@ mod tests {
             check_initial_firmware_password, create_single_update_job_status, FirmwarePlanReceiver,
         };
 
-        let receiver = ReceiverMock::new(Mode::DisabledSecurity, CONFIGURED, 0);
-        let job = create_single_update_job_status(
-            "test-job",
-            &FirmwarePlanReceiver {
-                credential: receiver.rx.clone(),
-                model: "BD940-INS".into(),
-                target_file: "argon_titan_V663_073.timg".into(),
-                target_url: "local://test".into(),
-                local_package_path: None,
-            },
-            Some("group-fw-test".into()),
-            "Test",
-        );
-        let jobs = Arc::new(Mutex::new(HashMap::from([("test-job".into(), job)])));
+        for security_mode in [
+            Mode::DisabledSecurity,
+            Mode::DisabledSecurityWithUserSecurityFlag,
+        ] {
+            let receiver = ReceiverMock::new(security_mode, CONFIGURED, 0);
+            let job = create_single_update_job_status(
+                "test-job",
+                &FirmwarePlanReceiver {
+                    credential: receiver.rx.clone(),
+                    model: "BD940-INS".into(),
+                    target_file: "argon_titan_V663_073.timg".into(),
+                    target_url: "local://test".into(),
+                    local_package_path: None,
+                },
+                Some("group-fw-test".into()),
+                "Test",
+            );
+            let jobs = Arc::new(Mutex::new(HashMap::from([("test-job".into(), job)])));
 
-        let mode = check_initial_firmware_password(&jobs, "test-job", &receiver.rx).unwrap();
+            let mode = check_initial_firmware_password(&jobs, "test-job", &receiver.rx).unwrap();
 
-        assert_eq!(mode, FirmwareSecurityMode::Unprotected);
-        let jobs = jobs.lock().unwrap();
-        let step = jobs["test-job"]
-            .steps
-            .iter()
-            .rev()
-            .find(|step| step.state == "CheckPassword")
-            .unwrap();
-        assert_eq!(step.status, "Completed");
-        assert!(step.message.contains("security is disabled"));
-        let state = receiver.state.lock().unwrap();
-        assert_eq!(state.login_requests, 0);
-        assert_eq!(state.writes, 0);
+            assert_eq!(mode, FirmwareSecurityMode::Unprotected);
+            let jobs = jobs.lock().unwrap();
+            let step = jobs["test-job"]
+                .steps
+                .iter()
+                .rev()
+                .find(|step| step.state == "CheckPassword")
+                .unwrap();
+            assert_eq!(step.status, "Completed");
+            assert!(step.message.contains("security is disabled"));
+            let state = receiver.state.lock().unwrap();
+            assert_eq!(state.login_requests, 0);
+            assert_eq!(state.writes, 0);
+        }
     }
 
     #[test]

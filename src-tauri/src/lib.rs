@@ -132,6 +132,8 @@ struct FirmwareJobs {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct FirmwareConfigMode {
     receiver_models: BTreeMap<String, String>,
+    #[serde(default)]
+    excluded_receivers: BTreeSet<String>,
     firmware_version: String,
     firmware_suffix: BTreeMap<String, String>,
     logo: String,
@@ -829,6 +831,7 @@ fn add_firmware_config_receiver(
     let mut configs = read_firmware_configs()?;
     for config in configs.values_mut() {
         config.receiver_models.remove(&ip);
+        config.excluded_receivers.remove(&ip);
     }
     let config = configs
         .get_mut(&mode)
@@ -845,12 +848,17 @@ fn remove_firmware_config_receiver(
     app_password: String,
 ) -> Result<FirmwareConfigResponse, String> {
     validate_application_password(&app_password)?;
+    let ip = ip.trim();
+    if ip.parse::<Ipv4Addr>().is_err() {
+        return Err(format!("Invalid receiver IP: {ip}"));
+    }
 
     let mut configs = read_firmware_configs()?;
     let config = configs
         .get_mut(&mode)
         .ok_or_else(|| format!("Firmware config mode not found: {mode}"))?;
-    config.receiver_models.remove(ip.trim());
+    config.receiver_models.remove(ip);
+    config.excluded_receivers.insert(ip.to_string());
     write_firmware_configs(&configs)?;
     firmware_config_response(&mode)
 }
@@ -2316,7 +2324,12 @@ fn firmware_receivers_for_group(
 ) -> Vec<FirmwareReceiver> {
     let mut receivers: Vec<_> = credentials
         .into_iter()
-        .filter(|receiver| receiver.group == group)
+        .filter(|receiver| {
+            receiver.group == group
+                && !configs
+                    .get(mode)
+                    .is_some_and(|config| config.excluded_receivers.contains(&receiver.addr))
+        })
         .map(|receiver| FirmwareReceiver {
             model: firmware_model_for_receiver(configs, mode, &receiver.addr)
                 .unwrap_or_else(|| "unknown".to_string()),
@@ -7449,6 +7462,7 @@ mod tests {
                         ("10.2.155.45".to_string(), "argon".to_string()),
                         ("10.2.155.55".to_string(), "alloy".to_string()),
                     ]),
+                    excluded_receivers: BTreeSet::new(),
                     firmware_version: "V7.00".to_string(),
                     firmware_suffix: BTreeMap::new(),
                     logo: "ALPHA.png".to_string(),
@@ -7458,6 +7472,7 @@ mod tests {
                 "Beta".to_string(),
                 FirmwareConfigMode {
                     receiver_models: BTreeMap::new(),
+                    excluded_receivers: BTreeSet::new(),
                     firmware_version: "V5.83".to_string(),
                     firmware_suffix: BTreeMap::new(),
                     logo: "BETA.png".to_string(),
@@ -7477,9 +7492,50 @@ mod tests {
     }
 
     #[test]
+    fn excluded_firmware_receiver_stays_hidden_after_config_reload() {
+        let mut configs: BTreeMap<String, FirmwareConfigMode> =
+            serde_json::from_str(DEFAULT_FIRMWARE_CONFIG).expect("legacy config should load");
+        let alpha = configs.get_mut("Alpha").expect("Alpha config");
+        assert!(alpha.excluded_receivers.is_empty());
+        alpha.receiver_models.remove("10.2.155.55");
+        alpha.excluded_receivers.insert("10.2.155.55".to_string());
+
+        let saved = serde_json::to_string(&configs).expect("config should serialize");
+        let reloaded: BTreeMap<String, FirmwareConfigMode> =
+            serde_json::from_str(&saved).expect("config should reload");
+        let credentials = vec![
+            ReceiverCredential {
+                addr: "10.2.155.55".to_string(),
+                user: "qa".to_string(),
+                pw: "secret".to_string(),
+                group: 2,
+            },
+            ReceiverCredential {
+                addr: "10.2.155.57".to_string(),
+                user: "qa".to_string(),
+                pw: "secret".to_string(),
+                group: 2,
+            },
+        ];
+        let visible = firmware_receivers_for_group(&reloaded, "Alpha", 2, credentials.clone());
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].ip, "10.2.155.57");
+
+        let mut restored = reloaded;
+        restored
+            .get_mut("Alpha")
+            .expect("Alpha config")
+            .excluded_receivers
+            .remove("10.2.155.55");
+        let visible = firmware_receivers_for_group(&restored, "Alpha", 2, credentials);
+        assert_eq!(visible.len(), 2);
+    }
+
+    #[test]
     fn firmware_target_uses_model_specific_suffix_before_default_override() {
         let config = FirmwareConfigMode {
             receiver_models: BTreeMap::new(),
+            excluded_receivers: BTreeSet::new(),
             firmware_version: "V7.00".to_string(),
             firmware_suffix: BTreeMap::from([
                 ("default".to_string(), "_titan_V700_034.timg".to_string()),
@@ -7501,6 +7557,7 @@ mod tests {
     fn image_only_models_replace_default_timg_extension() {
         let config = FirmwareConfigMode {
             receiver_models: BTreeMap::new(),
+            excluded_receivers: BTreeSet::new(),
             firmware_version: "V7.00".to_string(),
             firmware_suffix: BTreeMap::from([(
                 "default".to_string(),

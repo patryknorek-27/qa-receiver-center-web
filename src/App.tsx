@@ -14,7 +14,14 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow, type DragDropEvent } from '@tauri-apps/api/window'
 import { ModusWcNavbar, ModusWcThemeSwitcher } from '@trimble-oss/moduswebcomponents-react'
 import qaCenterIcon from './assets/qa_center_icon.png'
+import {
+  formatBytes,
+  formatDuration,
+  formatNumber,
+  formatProgressPercent,
+} from './displayFormatters'
 import { getFirmwareWorkerCount } from './firmwareConcurrency'
+import { releaseMatchesMode } from './firmwareReleaseSelection'
 import { restoreReceiverSelection } from './firmwareSelection'
 import {
   getGroupUpdateBlocker,
@@ -1318,6 +1325,7 @@ function FirmwareModulePage({
   const [isBuildCatalogLoading, setIsBuildCatalogLoading] = useState(false)
   const [isReleaseInspectionLoading, setIsReleaseInspectionLoading] = useState(false)
   const [releaseCatalogRevision, setReleaseCatalogRevision] = useState(0)
+  const releaseCatalogEntryRef = useRef('')
   const [standaloneSelectedReleaseId, setStandaloneSelectedReleaseId] = useState('')
   const [standaloneBuildOptions, setStandaloneBuildOptions] = useState<StandaloneFirmwareBuild[]>([])
   const [standaloneSelectedBuildId, setStandaloneSelectedBuildId] = useState('')
@@ -1429,11 +1437,11 @@ function FirmwareModulePage({
     [visibleFirmwareReceivers],
   )
   const visibleReleaseOptions = useMemo(() => {
-    const blockedChannel = current.mode === 'Alpha' ? 'beta' : current.mode === 'Beta' ? 'alpha' : ''
-    if (!releaseCatalog || !blockedChannel) {
+    const mode = current.mode
+    if (!releaseCatalog || (mode !== 'Alpha' && mode !== 'Beta')) {
       return releaseCatalog?.releases || []
     }
-    return releaseCatalog.releases.filter((release) => !release.name.toLowerCase().includes(blockedChannel))
+    return releaseCatalog.releases.filter((release) => releaseMatchesMode(release.name, mode))
   }, [current.mode, releaseCatalog])
   const standaloneReleaseOptions = releaseCatalog?.releases || []
   const standaloneReleaseMatchesByModel = useMemo(
@@ -1821,22 +1829,24 @@ function FirmwareModulePage({
   ])
 
   useEffect(() => {
-    const usesReleaseCatalog =
+    const catalogEntry =
       (page === 'FirmwareSingle' && singleSourceMode === 'release') ||
       (page === 'FirmwareMultiple' && multipleSourceMode === 'release')
-    if (!usesReleaseCatalog || releaseCatalog || isReleaseCatalogLoading || !isTauri()) {
+        ? page
+        : ''
+    if (!catalogEntry || !isTauri()) {
+      releaseCatalogEntryRef.current = ''
       return
     }
-    void (async () => {
-      await Promise.resolve()
-      await loadReleaseCatalog()
-    })()
+    if (releaseCatalogEntryRef.current === catalogEntry) {
+      return
+    }
+    releaseCatalogEntryRef.current = catalogEntry
+    void loadReleaseCatalog()
   }, [
-    isReleaseCatalogLoading,
     loadReleaseCatalog,
     multipleSourceMode,
     page,
-    releaseCatalog,
     singleSourceMode,
   ])
 
@@ -3614,7 +3624,7 @@ function FirmwareModulePage({
                       </button>
                       <button
                         className="firmware-remove-button"
-                        title={`Remove ${receiver.ip} from firmware config`}
+                        title={`Remove ${receiver.ip} from this firmware group`}
                         onClick={(event) => {
                           event.preventDefault()
                           event.stopPropagation()
@@ -5230,15 +5240,15 @@ function FirmwareModulePage({
                 setShowRemovePassword(false)
               }}
             />
-            <section className="firmware-confirm-modal" aria-label="Remove config receiver">
+            <section className="firmware-confirm-modal" aria-label="Remove receiver from firmware group">
               <header className="credentials-header danger">
                 <div className="credentials-title">
                   <div className="credentials-icon danger">
                     <X size={20} />
                   </div>
                   <div>
-                    <h2>Remove Config Receiver</h2>
-                    <p>This action changes the firmware group configuration.</p>
+                    <h2>Remove from Firmware Group</h2>
+                    <p>This receiver will stay hidden in this group on this computer until you add it again.</p>
                   </div>
                 </div>
                 <button
@@ -5265,7 +5275,7 @@ function FirmwareModulePage({
                 </div>
 
                 <p className="credentials-note">
-                  Re-enter your application password to remove this receiver from the firmware config.
+                  Re-enter your application password to remove this receiver from the firmware group.
                 </p>
 
                 <label className="credentials-field">
@@ -6703,60 +6713,6 @@ function MetricTile({
       </div>
     </article>
   )
-}
-
-function formatNumber(value: number | null, suffix = '') {
-  if (value === null || Number.isNaN(value)) {
-    return '--'
-  }
-
-  return `${Number.isInteger(value) ? value : value.toFixed(1)}${suffix}`
-}
-
-function formatDuration(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return '--'
-  }
-
-  const totalSeconds = Math.max(0, Math.floor(value))
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-
-  if (days > 0) {
-    return `${days}d ${hours}h`
-  }
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`
-  }
-
-  return `${minutes}m`
-}
-
-function formatBytes(value: number) {
-  if (!Number.isFinite(value)) {
-    return '--'
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB']
-  let size = value
-  let unitIndex = 0
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex += 1
-  }
-
-  return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`
-}
-
-function formatProgressPercent(value: number) {
-  if (!Number.isFinite(value)) {
-    return '--'
-  }
-
-  const safeValue = Math.max(0, Math.min(100, value))
-  return `${safeValue >= 10 ? safeValue.toFixed(0) : safeValue.toFixed(1)}%`
 }
 
 function getFirmwareJobProgress(job: FirmwareSingleUpdateJobStatus) {
