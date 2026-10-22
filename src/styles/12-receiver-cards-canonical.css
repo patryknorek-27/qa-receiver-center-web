@@ -1,0 +1,300 @@
+/* Canonical receiver cards for Single and Group firmware pages. */
+.firmware-operation-page .firmware-device-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.firmware-operation-page .firmware-device-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-inline-start: 5px solid var(--modus-wc-color-gray-4, #90939f);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.firmware-operation-page button.firmware-device-card {
+  appearance: none;
+}
+
+.firmware-operation-page .firmware-device-card.online {
+  border-inline-start-color: var(--modus-wc-color-green, #1e8a44);
+}
+
+.firmware-operation-page .firmware-device-card.offline {
+  border-inline-start-color: var(--modus-wc-color-red, #da212c);
+}
+
+.firmware-operation-page .firmware-device-card.needs-review {
+  border-inline-start-color: var(--modus-wc-color-yellow-dark, #8a6d00);
+}
+
+.firmware-operation-page .firmware-device-card.selected {
+  border-block-color: color-mix(in srgb, var(--primary) 54%, var(--border));
+  border-inline-end-color: color-mix(in srgb, var(--primary) 54%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.firmware-operation-page .group-firmware-device-card.selected {
+  background: color-mix(in srgb, var(--surface-subtle) 90%, var(--primary));
+  border-block-color: var(--border);
+  border-inline-end-color: var(--border);
+  box-shadow: none;
+}
+
+.firmware-operation-page .firmware-device-card.interactive {
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.firmware-operation-page .firmware-device-card.interactive:hover {
+  background: color-mix(in srgb, var(--surface-subtle) 92%, var(--primary));
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+}
+
+.firmware-operation-page .firmware-device-card__leading {
+  width: 22px;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+}
+
+.firmware-operation-page .firmware-device-card__leading label {
+  width: 22px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.firmware-operation-page .firmware-device-card__leading input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.firmware-operation-page .group-firmware-device-card {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+}
+
+.firmware-operation-page .firmware-device-card__summary {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.firmware-operation-page .firmware-device-card__heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.firmware-operation-page .firmware-device-card__heading strong {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--heading);
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.firmware-operation-page .firmware-device-card__model,
+.firmware-operation-page .firmware-device-card__credentials,
+.firmware-operation-page .firmware-device-card__status {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.firmware-operation-page .firmware-device-card__model {
+  color: var(--modus-wc-color-highlight-blue, #019aeb);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
+.firmware-operation-page .firmware-device-card__model.unknown {
+  color: var(--modus-wc-color-yellow-dark, #6f5900);
+  background: color-mix(in srgb, var(--modus-wc-color-yellow, #f6c344) 18%, transparent);
+  border-color: color-mix(in srgb, var(--modus-wc-color-yellow, #f6c344) 48%, transparent);
+}
+
+.firmware-operation-page .firmware-device-card__credentials,
+.firmware-operation-page .firmware-device-card__status.online {
+  color: var(--modus-wc-color-green, #1e8a44);
+  background: color-mix(in srgb, var(--modus-wc-color-green, #1e8a44) 16%, transparent);
+  border-color: color-mix(in srgb, var(--modus-wc-color-green, #1e8a44) 42%, transparent);
+}
+
+.firmware-operation-page .firmware-device-card__credentials.missing,
+.firmware-operation-page .firmware-device-card__status.offline {
+  color: var(--modus-wc-color-red, #da212c);
+  background: color-mix(in srgb, var(--modus-wc-color-red, #da212c) 15%, transparent);
+  border-color: color-mix(in srgb, var(--modus-wc-color-red, #da212c) 40%, transparent);
+}
+
+.firmware-operation-page .firmware-device-card__status.pending,
+.firmware-operation-page .firmware-device-card__status.needs-review {
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.firmware-operation-page .firmware-device-card__meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.firmware-operation-page .firmware-device-card__stats {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.firmware-operation-page .firmware-device-card__stats > span {
+  min-width: 0;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.firmware-operation-page .firmware-device-card__stats svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.firmware-operation-page .firmware-device-card__footer {
+  min-width: 0;
+}
+
+.firmware-operation-page .firmware-device-card__actions {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(78px, auto) 32px 32px;
+  align-items: center;
+  gap: 5px;
+}
+
+.firmware-operation-page .firmware-device-card__actions > .preflight-pill {
+  min-width: 78px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.firmware-operation-page .firmware-device-card__actions > .firmware-edit-button,
+.firmware-operation-page .firmware-device-card__actions > .firmware-remove-button,
+.firmware-operation-page .firmware-device-card__clear {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+.firmware-operation-page .single-firmware-device-card,
+.firmware-operation-page .single-selected-firmware-device-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.firmware-operation-page .single-selected-firmware-device-card {
+  width: calc(100% - 16px);
+  margin: 8px;
+}
+
+.firmware-operation-page .single-firmware-device-card .firmware-device-card__actions,
+.firmware-operation-page .single-selected-firmware-device-card .firmware-device-card__actions {
+  display: grid;
+  grid-template-columns: 32px;
+}
+
+.firmware-operation-page .firmware-device-card__chevron {
+  color: var(--muted);
+}
+
+/* Keep the approved Multiple card intact; only strengthen its state stripe. */
+.firmware-operation-page .multiple-update-receiver-card {
+  border-inline-start-width: 5px;
+}
+
+@container unified-receiver-pane (max-width: 680px) {
+  .firmware-operation-page .group-firmware-device-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .firmware-operation-page .group-firmware-device-card .firmware-device-card__actions {
+    grid-column: 2;
+    width: min(100%, 260px);
+    justify-self: start;
+  }
+}
+
+@container unified-receiver-pane (max-width: 430px) {
+  .firmware-operation-page .firmware-device-card {
+    min-height: 94px;
+    padding: 8px;
+  }
+
+  .firmware-operation-page .firmware-device-card__meta {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .firmware-operation-page .single-firmware-device-card,
+  .firmware-operation-page .single-selected-firmware-device-card {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+}
+

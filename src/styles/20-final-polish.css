@@ -1,0 +1,677 @@
+/* Card-boundary polish after the compact responsive pass. */
+.firmware-toggle {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.firmware-toggle > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-height: 980px) and (min-width: 761px) {
+  .receiver-row,
+  .dashboard-receiver-list .receiver-row {
+    min-height: 94px;
+    padding: 9px 12px 10px;
+  }
+
+  .receiver-card-status {
+    padding-top: 7px;
+  }
+
+  .receiver-card-main {
+    gap: 7px;
+  }
+
+  .receiver-card-title {
+    gap: 10px;
+  }
+
+  .receiver-card-title .status-pill {
+    min-height: 28px;
+  }
+
+  .receiver-card-stats {
+    gap: 6px;
+  }
+
+  .receiver-card-stats .firmware-mini-stat {
+    min-height: 26px;
+    padding-inline: 8px;
+  }
+
+  .firmware-group-page .catalog-plan-fields,
+  .firmware-group-page .group-plan-fields {
+    grid-template-columns: minmax(240px, 1.15fr) minmax(220px, 1fr) minmax(174px, 0.48fr);
+  }
+
+  .firmware-group-page .firmware-list-panel .firmware-receiver-list {
+    grid-auto-rows: minmax(84px, auto);
+  }
+
+  .firmware-group-page .firmware-receiver-card {
+    min-height: 84px;
+    padding: 8px 10px 10px;
+  }
+
+  .firmware-group-page .firmware-receiver-main {
+    gap: 5px;
+  }
+}
+
+@container firmware-page (max-width: 960px) and (min-width: 721px) {
+  .firmware-group-page .catalog-plan-fields,
+  .firmware-group-page .group-plan-fields {
+    grid-template-columns: minmax(200px, 1.08fr) minmax(180px, 0.92fr) minmax(166px, 0.48fr);
+  }
+}
+
+/* Unified receiver-first firmware workspaces. */
+.firmware-operation-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+  background: var(--surface-subtle);
+}
+
+.firmware-operation-layout,
+.group-operation-page {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(460px, 1.45fr) minmax(340px, 0.85fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.group-operation-page.firmware-group-page {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.firmware-operation-page .firmware-receiver-pane,
+.firmware-operation-page .firmware-settings-pane,
+.firmware-operation-page .firmware-settings-actions {
+  min-width: 0;
+  min-height: 0;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.group-operation-page .firmware-receiver-pane {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.group-operation-page .firmware-settings-pane {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.group-operation-page .firmware-settings-actions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.firmware-operation-page .firmware-receiver-pane {
+  container-name: firmware-receiver-pane;
+  container-type: inline-size;
+  overflow: hidden;
+}
+
+.group-operation-page .firmware-list-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.group-operation-page .firmware-list-panel .firmware-selection-toolbar {
+  min-height: 48px;
+  flex: 0 0 auto;
+  padding: 7px 10px;
+}
+
+.group-operation-page .firmware-list-panel .firmware-receiver-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(72px, auto);
+  gap: 6px;
+  padding: 7px;
+}
+
+.group-operation-page .firmware-receiver-card {
+  min-height: 72px;
+  gap: 8px;
+  padding: 7px 8px;
+}
+
+.group-operation-page .firmware-receiver-controls {
+  grid-template-columns: 78px 32px 32px;
+  gap: 5px;
+}
+
+.group-operation-page .firmware-receiver-controls .preflight-pill {
+  width: 78px;
+  min-width: 78px;
+  min-height: 32px;
+}
+
+.group-operation-page .firmware-receiver-controls .firmware-edit-button,
+.group-operation-page .firmware-receiver-controls .firmware-remove-button {
+  width: 32px;
+  height: 32px;
+}
+
+@container firmware-receiver-pane (min-width: 900px) {
+  .group-operation-page .firmware-list-panel .firmware-receiver-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.group-operation-page .firmware-plan-toolbar {
+  padding: 12px;
+}
+
+.group-operation-page .firmware-plan-toolbar .firmware-panel-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.group-operation-page .firmware-panel-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.group-operation-page .firmware-panel-actions .secondary-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding-inline: 9px;
+}
+
+.group-operation-page .group-release-mode-row {
+  margin-bottom: 9px;
+}
+
+.group-operation-page .group-release-mode-row .source-mode-switch {
+  width: 100%;
+}
+
+.group-operation-page .catalog-plan-fields,
+.group-operation-page .group-plan-fields,
+.group-operation-page .manual-plan-fields {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+}
+
+.group-operation-page .catalog-plan-fields .group-release-selector,
+.group-operation-page .catalog-plan-fields .group-build-selector,
+.group-operation-page .catalog-plan-fields > .firmware-toggle,
+.group-operation-page .catalog-plan-fields .release-package-map,
+.group-operation-page .group-plan-fields > * {
+  grid-column: 1;
+  grid-row: auto;
+}
+
+.group-operation-page .firmware-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.group-operation-page .firmware-field-label-row > small {
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-operation-page .release-model-matches {
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px;
+}
+
+.group-operation-page .release-model-match {
+  min-height: 42px;
+  padding: 5px 7px;
+}
+
+.group-operation-page .release-model-match small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-operation-page .firmware-toggle {
+  width: 100%;
+  min-height: 38px;
+}
+
+.group-operation-page .firmware-action-dock {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding: 9px 10px;
+}
+
+.group-operation-page .firmware-operation-summary {
+  min-width: 0;
+}
+
+.group-operation-page .firmware-operation-copy > span {
+  display: none;
+}
+
+.group-operation-page .firmware-dock-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.group-operation-page .firmware-dock-actions button {
+  width: 100%;
+  min-width: 0;
+}
+
+.group-operation-page .firmware-start-control {
+  width: 100%;
+}
+
+.single-update-panel,
+.single-update-grid,
+.multiple-update-workspace {
+  height: 100%;
+  min-height: 0;
+}
+
+.single-update-grid,
+.multiple-update-workspace {
+  grid-template-columns: minmax(460px, 1.45fr) minmax(340px, 0.85fr);
+  align-items: stretch;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.single-update-card,
+.multiple-selection-panel,
+.multiple-source-panel {
+  padding: 12px;
+  border-radius: 4px;
+}
+
+.single-update-card.firmware-receiver-pane {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
+}
+
+.single-update-card.firmware-settings-pane,
+.multiple-source-panel.firmware-settings-pane {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.single-receiver-picker {
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.single-receiver-picker button {
+  min-height: 56px;
+  padding: 8px 10px;
+}
+
+.single-receiver-summary {
+  flex-wrap: wrap;
+}
+
+.single-update-card.firmware-settings-pane .firmware-form-grid.single.release,
+.multiple-source-panel .multiple-release-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.single-update-card.firmware-settings-pane .single-source-actions {
+  margin-top: auto;
+}
+
+.multiple-selection-panel {
+  height: 100%;
+  min-height: 0;
+}
+
+.multiple-section-header,
+.multiple-selection-tools {
+  flex: 0 0 auto;
+}
+
+.multiple-receiver-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding-right: 3px;
+}
+
+.multiple-receiver-card {
+  grid-template-columns: 22px minmax(0, 1fr) minmax(132px, 164px);
+  gap: 9px;
+  min-height: 92px;
+  padding: 8px 9px;
+  border-radius: 4px;
+}
+
+.multiple-model-field select {
+  min-height: 34px;
+}
+
+.multiple-source-panel {
+  height: 100%;
+}
+
+.multiple-source-panel > .primary-button:last-of-type {
+  margin-top: auto;
+}
+
+@container firmware-page (max-width: 860px) {
+  .firmware-operation-page {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .firmware-operation-layout,
+  .group-operation-page,
+  .single-update-grid,
+  .multiple-update-workspace {
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: start;
+    overflow: visible;
+  }
+
+  .group-operation-page .firmware-receiver-pane {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: clamp(360px, 58vh, 620px);
+  }
+
+  .group-operation-page .firmware-settings-pane {
+    grid-column: 1;
+    grid-row: 2;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .group-operation-page .firmware-settings-actions {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .single-update-card.firmware-receiver-pane,
+  .multiple-selection-panel.firmware-receiver-pane {
+    min-height: clamp(380px, 62vh, 640px);
+  }
+
+  .single-update-card.firmware-settings-pane,
+  .multiple-source-panel.firmware-settings-pane {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .firmware-operation-page {
+    padding: 7px;
+  }
+
+  .firmware-operation-layout,
+  .group-operation-page,
+  .single-update-grid,
+  .multiple-update-workspace {
+    gap: 7px;
+  }
+
+  .single-update-card,
+  .multiple-selection-panel,
+  .multiple-source-panel,
+  .group-operation-page .firmware-plan-toolbar {
+    padding: 9px;
+  }
+
+  .single-card-heading p,
+  .multiple-section-header p,
+  .group-operation-page .firmware-panel-header p {
+    display: none;
+  }
+
+  .group-operation-page .firmware-list-panel .firmware-receiver-list {
+    grid-auto-rows: minmax(82px, auto);
+  }
+
+  .group-operation-page .firmware-receiver-card,
+  .multiple-receiver-card {
+    min-height: 82px;
+  }
+
+  .single-receiver-picker button {
+    min-height: 50px;
+  }
+}
+
+@container firmware-page (max-width: 620px) {
+  .firmware-operation-page {
+    padding: 6px;
+  }
+
+  .group-operation-page .firmware-panel-actions,
+  .single-source-action-grid,
+  .group-operation-page .firmware-dock-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .group-operation-page .release-model-matches {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .multiple-selection-tools,
+  .multiple-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .multiple-receiver-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .multiple-model-field {
+    grid-column: 2;
+  }
+}
+.password-recovery-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #c93838;
+  border-left-width: 4px;
+  background: #fff0f0;
+  color: #8a1717;
+  overflow-wrap: anywhere;
+}
+
+.password-recovery-alert > svg {
+  flex: 0 0 auto;
+}
+
+.password-recovery-alert p {
+  margin: 6px 0 0;
+}
+
+.password-recovery-alert-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-recovery-alert > button {
+  flex: 0 0 auto;
+}
+
+.password-recovery-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(660px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  color: var(--heading);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-top: 4px solid #d34545;
+  border-radius: 8px;
+  box-shadow: 0 20px 70px #0006;
+  letter-spacing: 0;
+}
+
+.password-recovery-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.password-recovery-dialog::backdrop {
+  background: #141619b3;
+  backdrop-filter: blur(2px);
+}
+
+.password-recovery-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.password-recovery-dialog-header > svg {
+  flex-shrink: 0;
+  color: #d34545;
+}
+
+.password-recovery-dialog-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-recovery-dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.password-recovery-dialog-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.password-recovery-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.password-recovery-dialog-body > p {
+  margin: 0 0 16px;
+}
+
+.password-recovery-receivers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.password-recovery-receivers li {
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.password-recovery-receivers li:last-child {
+  padding-bottom: 0;
+}
+
+.password-recovery-receiver-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.password-recovery-receiver-heading span,
+.password-recovery-receivers p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.password-recovery-receivers p {
+  margin: 6px 0 0;
+}
+
+.password-recovery-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.password-recovery-sound-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .password-recovery-alert {
+    flex-wrap: wrap;
+  }
+
+  .password-recovery-dialog-header,
+  .password-recovery-dialog-body,
+  .password-recovery-dialog-footer {
+    padding: 16px;
+  }
+}

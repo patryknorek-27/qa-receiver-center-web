@@ -1,0 +1,652 @@
+/* Receiver cards and shared release catalog refinements. */
+.group-operation-page .firmware-list-panel .firmware-receiver-list {
+  grid-auto-rows: minmax(94px, auto);
+  gap: 8px;
+}
+
+.group-operation-page .firmware-receiver-card {
+  min-height: 94px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+}
+
+.group-operation-page .firmware-receiver-main {
+  min-width: 0;
+  align-self: center;
+  gap: 5px;
+}
+
+.group-operation-page .firmware-receiver-title {
+  min-width: 0;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.group-operation-page .firmware-receiver-title strong,
+.group-operation-page .firmware-receiver-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-operation-page .firmware-inline-stats {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.group-operation-page .firmware-receiver-controls {
+  align-self: center;
+}
+
+.single-receiver-picker {
+  display: grid;
+  grid-auto-rows: minmax(86px, auto);
+  align-content: start;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.single-receiver-picker .single-receiver-option-card {
+  width: 100%;
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.single-receiver-picker .single-receiver-option-card:hover {
+  background: color-mix(in srgb, var(--surface) 92%, var(--primary));
+  border-color: var(--primary);
+}
+
+.receiver-state-dot {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.receiver-state-dot.online {
+  background: var(--modus-wc-color-success, #006638);
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.14);
+}
+
+.receiver-state-dot.offline {
+  background: var(--modus-wc-color-error, #da212c);
+  box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.14);
+}
+
+.single-receiver-option-main {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.single-receiver-option-title,
+.multiple-receiver-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.single-receiver-option-title strong,
+.multiple-receiver-title strong {
+  min-width: 0;
+  color: var(--heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-receiver-option-subtitle,
+.multiple-receiver-subtitle {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--modus-wc-font-size-sm, 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-selected-receiver {
+  align-self: start;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--primary));
+  border: 1px solid color-mix(in srgb, var(--border) 55%, var(--primary));
+  border-left: 3px solid var(--primary);
+  border-radius: 4px;
+}
+
+.single-selected-receiver.offline {
+  border-left-color: var(--modus-wc-color-error, #da212c);
+}
+
+.single-selected-receiver-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto 36px;
+  align-items: center;
+  gap: 9px;
+}
+
+.single-selected-receiver-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.single-selected-receiver-header strong,
+.single-selected-receiver-header > div > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-selected-receiver-header > div > span {
+  color: var(--muted);
+  font-size: var(--modus-wc-font-size-sm, 12px);
+}
+
+.single-selected-receiver-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.multiple-receiver-list {
+  display: grid;
+  grid-auto-rows: minmax(104px, auto);
+  align-content: start;
+  gap: 8px;
+}
+
+.multiple-receiver-card {
+  min-height: 104px;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(142px, 172px);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+}
+
+.multiple-receiver-identity {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.multiple-receiver-identity .firmware-inline-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.multiple-model-field {
+  min-width: 0;
+  align-self: center;
+}
+
+.multiple-model-field select {
+  width: 100%;
+}
+
+.standalone-source-fields,
+.standalone-release-catalog {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.standalone-release-catalog {
+  padding-top: 2px;
+}
+
+.firmware-catalog-channel {
+  display: grid;
+  gap: 5px;
+}
+
+.firmware-catalog-channel > span,
+.standalone-package-summary > div:first-child > span {
+  color: var(--heading);
+  font-size: var(--modus-wc-font-size-sm, 12px);
+  font-weight: 700;
+}
+
+.source-mode-switch.compact {
+  width: 100%;
+}
+
+.source-mode-switch.compact button {
+  min-height: 34px;
+}
+
+.standalone-package-summary {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.standalone-package-summary > div:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.standalone-package-summary > div:first-child small,
+.catalog-empty-copy {
+  color: var(--muted);
+  font-size: var(--modus-wc-font-size-xs, 11px);
+}
+
+.standalone-package-summary .release-model-matches {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+}
+
+.catalog-loading-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary);
+  font-size: var(--modus-wc-font-size-sm, 12px);
+  font-weight: 600;
+}
+
+.catalog-empty-copy {
+  margin: 0;
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .group-operation-page .firmware-list-panel .firmware-receiver-list {
+    grid-auto-rows: minmax(88px, auto);
+  }
+
+  .group-operation-page .firmware-receiver-card {
+    min-height: 88px;
+  }
+
+  .multiple-receiver-list {
+    grid-auto-rows: minmax(96px, auto);
+  }
+
+  .multiple-receiver-card {
+    min-height: 96px;
+  }
+
+  .single-receiver-picker {
+    grid-auto-rows: minmax(80px, auto);
+  }
+}
+
+@container firmware-page (max-width: 620px) {
+  .single-selected-receiver-header {
+    grid-template-columns: 12px minmax(0, 1fr) 36px;
+  }
+
+  .single-selected-receiver-header .model-pill,
+  .single-selected-receiver-header .status-pill {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .single-selected-receiver-header .icon-button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .multiple-receiver-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .multiple-model-field {
+    grid-column: 2;
+  }
+
+  .standalone-package-summary > div:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@container firmware-page (max-width: 760px) {
+  .firmware-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .firmware-header > .status-pill {
+    align-self: flex-start;
+  }
+
+  .firmware-page-content {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .firmware-list-panel {
+    min-height: 320px;
+    flex: 1 0 320px;
+  }
+
+  .group-plan-fields,
+  .single-update-grid,
+  .multiple-update-workspace,
+  .create-group-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .group-plan-fields .firmware-toggle {
+    grid-column: auto;
+  }
+
+  .catalog-plan-fields .group-release-selector,
+  .catalog-plan-fields .group-build-selector,
+  .catalog-plan-fields > .firmware-toggle,
+  .catalog-plan-fields .release-package-map {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .firmware-action-dock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .firmware-operation-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .firmware-inline-alert,
+  .preflight-summary {
+    width: 100%;
+    max-width: none;
+  }
+
+  .firmware-dock-actions {
+    justify-content: stretch;
+  }
+
+  .firmware-dock-actions button {
+    flex: 1 1 0;
+  }
+
+  .multiple-update-workspace {
+    min-height: 0;
+  }
+
+  .multiple-selection-panel {
+    min-height: 460px;
+  }
+
+  .multiple-receiver-list {
+    max-height: 360px;
+  }
+}
+
+@container firmware-page (max-width: 520px) {
+  .firmware-header,
+  .firmware-page-content,
+  .firmware-page-scroll {
+    padding-inline: 12px;
+  }
+
+  .firmware-panel-header,
+  .firmware-selection-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .firmware-panel-actions,
+  .firmware-selection-toolbar > div:last-child,
+  .firmware-dock-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .firmware-panel-actions button,
+  .firmware-selection-toolbar button,
+  .firmware-dock-actions button {
+    width: 100%;
+    flex: none;
+  }
+
+  .firmware-list-heading {
+    justify-content: space-between;
+  }
+
+  .release-package-map-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .release-package-summary {
+    align-self: flex-start;
+  }
+
+  .release-model-matches {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .firmware-receiver-card {
+    grid-template-columns: 20px minmax(0, 1fr) 36px;
+  }
+
+  .firmware-receiver-card > .preflight-pill {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .create-group-receiver-row {
+    grid-template-columns: 20px 12px minmax(0, 1fr);
+  }
+
+  .create-group-receiver-row > .firmware-mini-stat {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .source-mode-switch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container history-page (max-width: 760px) {
+  .history-surface {
+    overflow-y: auto;
+  }
+
+  .history-header,
+  .history-module-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .history-header .secondary-button,
+  .history-group-filter {
+    width: 100%;
+  }
+
+  .history-module {
+    flex: 0 0 auto;
+    min-height: 360px;
+    overflow: visible;
+  }
+
+  .history-filter-bar {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 180px);
+  }
+
+  .history-search {
+    grid-column: 1 / -1;
+  }
+
+  .history-entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-entry-side {
+    grid-template-columns: minmax(0, 1fr) auto;
+    justify-items: start;
+    align-items: center;
+    text-align: left;
+  }
+
+  .history-entry-side > small {
+    justify-self: end;
+  }
+}
+
+@container history-page (max-width: 520px) {
+  .history-metrics,
+  .history-filter-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-segmented {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-result-filter,
+  .history-calendar-control,
+  .history-calendar-trigger {
+    width: 100%;
+  }
+
+  .history-entry-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-entry-side > small {
+    justify-self: start;
+  }
+}
+
+@media (max-height: 850px) and (min-width: 761px) {
+  .workspace:has(.firmware-route.active),
+  .workspace:has(.history-surface) {
+    overflow: hidden;
+  }
+
+  .workspace:has(.firmware-route.active) .topbar,
+  .workspace:has(.history-surface) .topbar {
+    display: none;
+  }
+
+  .firmware-surface,
+  .history-surface {
+    height: 100%;
+    min-height: 390px;
+  }
+
+  .firmware-header {
+    min-height: 56px;
+    padding-block: 8px;
+  }
+
+  .firmware-title p,
+  .firmware-plan-toolbar .firmware-panel-header p,
+  .firmware-operation-copy > span {
+    display: none;
+  }
+
+  .firmware-page-content,
+  .firmware-page-scroll {
+    gap: 8px;
+    padding-block: 8px 10px;
+  }
+
+  .firmware-plan-toolbar {
+    padding: 9px 12px;
+  }
+
+  .firmware-plan-toolbar .firmware-panel-header {
+    margin-bottom: 7px;
+  }
+
+  .firmware-list-panel .firmware-selection-toolbar {
+    min-height: 46px;
+  }
+
+  .firmware-list-panel .firmware-empty p,
+  .create-group-receiver-list .firmware-empty p {
+    display: none;
+  }
+
+  .firmware-action-dock {
+    min-height: 58px;
+    padding-block: 7px;
+  }
+
+  .firmware-group-page {
+    grid-template-rows: auto minmax(100px, 1fr) auto;
+  }
+
+  .single-receiver-picker {
+    max-height: 190px;
+  }
+
+  .history-surface {
+    gap: 9px;
+    padding-block: 10px 12px;
+  }
+
+  .history-module {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .history-empty {
+    min-height: 0;
+    gap: 4px;
+    padding: 8px;
+  }
+
+  .history-empty svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .history-empty strong {
+    font-size: var(--modus-wc-font-size-md, 14px);
+  }
+
+  .history-empty p {
+    display: none;
+  }
+}
+

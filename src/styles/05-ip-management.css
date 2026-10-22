@@ -1,0 +1,798 @@
+.log-entry span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.queue-surface {
+  padding: 16px;
+}
+
+.placeholder-surface {
+  min-height: 520px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.placeholder-surface p {
+  color: var(--muted);
+}
+
+.ip-management-surface {
+  height: calc(100vh - var(--app-navbar-height) - 112px);
+  min-height: 560px;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.ip-management-header,
+.ip-management-toolbar,
+.ip-edit-modal header,
+.ip-reject-modal header,
+.ip-edit-modal footer,
+.ip-reject-modal footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ip-management-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ip-management-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ip-management-tabs button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.ip-management-tabs button.active {
+  color: var(--primary);
+  background: var(--surface);
+  box-shadow: inset 0 -2px var(--primary);
+}
+
+.ip-management-tabs button span {
+  min-width: 21px;
+  height: 21px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  color: var(--action-danger-content);
+  background: var(--action-danger);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.ip-management-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ip-management-metrics > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  border-top: 3px solid var(--ip-metric-accent, var(--border));
+}
+
+.ip-metric-total { --ip-metric-accent: var(--primary); }
+.ip-metric-used { --ip-metric-accent: var(--status-success); }
+.ip-metric-unused { --ip-metric-accent: var(--muted); }
+.ip-metric-reserved,
+.ip-metric-pending { --ip-metric-accent: var(--status-warning); }
+
+.ip-management-metrics span,
+.ip-request-field span,
+.ip-edit-modal label > span,
+.ip-reject-modal label > span,
+.ip-edit-modal header span,
+.ip-reject-modal header span {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-weight: var(--weight-label);
+  text-transform: none;
+}
+
+.ip-management-metrics strong {
+  color: var(--heading);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ip-management-toolbar {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.ip-status-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 40px;
+  padding: 3px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ip-status-filters button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ip-status-filters button.active {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--surface) 90%, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.ip-status-filters button span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ip-search-box {
+  width: min(430px, 100%);
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ip-search-box:focus-within {
+  color: var(--primary);
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ip-clear-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  color: var(--primary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--font-caption);
+  cursor: pointer;
+}
+
+.ip-clear-filters:hover {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.ip-search-box input {
+  width: 100%;
+  min-width: 0;
+  color: var(--heading);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+}
+
+.ip-management-toolbar select {
+  width: 170px;
+  height: 40px;
+  padding: 0 10px;
+  color: var(--heading);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ip-result-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ip-management-error {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--surface) 92%, var(--status-danger));
+  border: 1px solid color-mix(in srgb, var(--status-danger) 30%, var(--border));
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.ip-management-notices {
+  display: grid;
+  gap: 8px;
+}
+
+.ip-ping-summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.ip-ping-summary strong {
+  color: var(--status-success);
+}
+
+.ip-ping-summary time {
+  margin-left: auto;
+}
+
+.ip-management-error span {
+  flex: 1;
+}
+
+.ip-management-error button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ip-table-wrap,
+.ip-request-list {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.ip-table-wrap:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ip-table {
+  width: 100%;
+  min-width: 1540px;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--heading);
+  font-size: 12px;
+}
+
+.ip-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 39px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: var(--weight-label);
+  text-align: left;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.ip-sort-button {
+  width: 100%;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.ip-sort-button:hover {
+  color: var(--primary);
+}
+
+.ip-sort-button:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ip-table td {
+  height: 47px;
+  max-width: 180px;
+  padding: 6px 10px;
+  overflow: hidden;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-table th,
+.ip-table td {
+  border-left: 0;
+  border-right: 0;
+}
+
+.ip-table th:first-child,
+.ip-table td:first-child {
+  position: sticky;
+  left: 0;
+  box-shadow: 1px 0 var(--border);
+}
+
+.ip-table th:last-child,
+.ip-table td:last-child {
+  position: sticky;
+  right: 0;
+  box-shadow: -1px 0 var(--border);
+}
+
+.ip-table td:first-child,
+.ip-table td:last-child {
+  z-index: 1;
+}
+
+.ip-table th:first-child,
+.ip-table th:last-child {
+  z-index: 3;
+}
+
+.ip-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ip-table tbody tr:hover td,
+.ip-table tbody tr:focus-within td {
+  background: color-mix(in srgb, var(--surface) 94%, var(--primary));
+}
+
+.ip-table .ip-conflict-row td {
+  background: color-mix(in srgb, var(--surface) 91%, var(--status-warning));
+}
+
+.ip-table .ip-usage-expired-row td {
+  background: color-mix(in srgb, var(--surface) 90%, var(--status-danger));
+}
+
+.ip-table .ip-usage-expired-row:hover td {
+  background: color-mix(in srgb, var(--surface) 84%, var(--status-danger));
+}
+
+.ip-usage-expired-cell {
+  color: var(--status-danger);
+  font-weight: 700;
+}
+
+.ip-address-cell strong {
+  display: block;
+  font-size: 13px;
+}
+
+.ip-address-cell > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: var(--status-warning);
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.ip-status-badge {
+  min-width: 67px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--modus-wc-border-radius-badge, 4px);
+  font-size: 11px;
+  font-weight: var(--weight-label);
+}
+
+.ip-status-badge.used,
+.ip-status-badge.approved {
+  color: var(--status-success);
+  background: color-mix(in srgb, var(--surface) 91%, var(--status-success));
+  border-color: color-mix(in srgb, var(--status-success) 24%, transparent);
+}
+
+.ip-status-badge.unused {
+  color: var(--text);
+  background: var(--surface-subtle);
+  border-color: var(--border);
+}
+
+.ip-status-badge.reserved,
+.ip-status-badge.pending {
+  color: var(--heading);
+  background: color-mix(in srgb, var(--surface) 85%, var(--status-warning));
+  border-color: color-mix(in srgb, var(--status-warning) 40%, transparent);
+}
+
+.ip-status-badge.rejected {
+  color: var(--status-danger);
+  background: color-mix(in srgb, var(--surface) 90%, var(--status-danger));
+  border-color: color-mix(in srgb, var(--status-danger) 24%, transparent);
+}
+
+.ip-online-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.ip-online-state.online {
+  color: var(--status-success);
+}
+
+.ip-online-state.offline {
+  color: var(--status-danger);
+}
+
+.ip-notes-cell {
+  width: 190px;
+}
+
+.ip-edit-button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ip-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ip-edit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ip-edit-button:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.ip-empty-state,
+.ip-loading-state {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.ip-empty-state strong {
+  color: var(--heading);
+  font-size: var(--font-body);
+}
+
+.ip-request-list {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  background: var(--surface);
+}
+
+.ip-request-row {
+  min-width: 1070px;
+  display: grid;
+  grid-template-columns: 155px repeat(6, minmax(120px, 1fr)) minmax(170px, 1.2fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ip-request-row:last-child {
+  border-bottom: 0;
+}
+
+.ip-request-main > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ip-request-main p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ip-request-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ip-request-field strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ip-request-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.ip-request-actions .primary-button,
+.ip-request-actions .secondary-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.ip-request-decision {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ip-edit-modal,
+.ip-reject-modal {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  color: var(--heading);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 34px 74px rgba(2, 6, 23, 0.36);
+}
+
+.ip-reject-modal {
+  width: min(520px, 100%);
+}
+
+.ip-edit-modal header,
+.ip-reject-modal header {
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--surface-elevated) 92%, var(--primary));
+  border-bottom: 1px solid var(--border);
+}
+
+.ip-edit-modal header h2,
+.ip-reject-modal header h2 {
+  margin-top: 3px;
+  font-size: 19px;
+}
+
+.ip-edit-modal form,
+.ip-reject-modal form {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.ip-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.ip-edit-modal label,
+.ip-reject-modal label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.ip-edit-modal input,
+.ip-edit-modal select,
+.ip-edit-modal textarea,
+.ip-reject-modal textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0 11px;
+  color: var(--heading);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: 0;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ip-edit-modal input,
+.ip-edit-modal select {
+  height: 42px;
+}
+
+.ip-edit-modal textarea,
+.ip-reject-modal textarea {
+  min-height: 92px;
+  padding-top: 10px;
+  resize: vertical;
+}
+
+.ip-edit-modal input:focus,
+.ip-edit-modal select:focus,
+.ip-edit-modal textarea:focus,
+.ip-reject-modal textarea:focus {
+  border-color: rgba(14, 165, 233, 0.56);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.ip-edit-modal select:disabled {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.ip-edit-notes {
+  grid-column: 1 / -1;
+}
+
+.ip-edit-modal footer,
+.ip-reject-modal footer {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+@media (max-width: 1100px) {
+  .ip-management-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ip-management-surface {
+    min-height: 500px;
+  }
+
+  .ip-request-list {
+    overflow-x: hidden;
+  }
+
+  .ip-request-row {
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ip-request-main,
+  .ip-request-actions {
+    grid-column: 1 / -1;
+  }
+
+  .ip-request-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 700px) {
+  .ip-management-surface {
+    height: auto;
+    min-height: calc(100vh - var(--app-navbar-height) - 96px);
+    grid-template-rows: auto auto auto auto minmax(420px, 1fr);
+    padding: 12px;
+  }
+
+  .ip-management-header,
+  .ip-management-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ip-management-tabs,
+  .ip-search-box,
+  .ip-management-toolbar select,
+  .ip-status-filters {
+    width: 100%;
+  }
+
+  .ip-management-actions,
+  .ip-status-filters {
+    flex-wrap: wrap;
+  }
+
+  .ip-management-actions .secondary-button,
+  .ip-status-filters button {
+    flex: 1;
+  }
+
+  .ip-management-tabs button {
+    flex: 1;
+  }
+
+  .ip-management-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ip-result-count {
+    margin-left: 0;
+  }
+
+  .ip-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ip-edit-notes {
+    grid-column: auto;
+  }
+}
+

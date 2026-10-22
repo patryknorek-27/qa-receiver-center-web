@@ -1,0 +1,378 @@
+/* Final unified firmware workspace. Keep this section last so legacy page rules
+   cannot split or compress receiver cards differently between update modes. */
+.firmware-operation-page .firmware-unified-workspace {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(540px, 1.58fr) minmax(360px, 0.92fr);
+  gap: 10px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.firmware-operation-page .firmware-unified-workspace.group-operation-page {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.firmware-operation-page .firmware-unified-workspace .firmware-receiver-list-panel,
+.firmware-operation-page .firmware-unified-workspace .firmware-config-panel,
+.firmware-operation-page .firmware-unified-workspace .firmware-settings-actions {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.firmware-operation-page .firmware-unified-workspace .firmware-receiver-list-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  container-name: unified-receiver-pane;
+  container-type: inline-size;
+  overflow: hidden;
+}
+
+.firmware-operation-page .firmware-unified-workspace .firmware-config-panel {
+  height: 100%;
+  padding: 11px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-receiver-list-panel {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-config-panel {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-settings-actions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.firmware-operation-page .firmware-unified-workspace .firmware-selection-toolbar,
+.firmware-operation-page .firmware-unified-workspace .multiple-section-header,
+.firmware-operation-page .firmware-unified-workspace .multiple-selection-tools,
+.firmware-operation-page .firmware-unified-workspace .single-card-heading,
+.firmware-operation-page .firmware-unified-workspace > .firmware-receiver-list-panel > .firmware-field {
+  flex: 0 0 auto;
+}
+
+.firmware-operation-page .firmware-unified-workspace .firmware-receiver-list,
+.firmware-operation-page .firmware-unified-workspace .single-receiver-picker,
+.firmware-operation-page .firmware-unified-workspace .multiple-receiver-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 7px;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-padding-block: 8px;
+}
+
+.firmware-operation-page .update-receiver-card,
+.firmware-operation-page .single-receiver-picker button.update-receiver-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-rows: auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-left: 4px solid transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.firmware-operation-page button.update-receiver-card {
+  appearance: none;
+  cursor: pointer;
+}
+
+.firmware-operation-page button.update-receiver-card:hover {
+  background: color-mix(in srgb, var(--surface-subtle) 88%, var(--primary));
+  border-color: color-mix(in srgb, var(--border) 48%, var(--primary));
+}
+
+.firmware-operation-page .update-receiver-card.selected {
+  background: color-mix(in srgb, var(--surface-subtle) 90%, var(--primary));
+  border-left-color: var(--primary);
+}
+
+.firmware-operation-page .update-receiver-card.online {
+  border-left-color: var(--modus-wc-color-success, #006638);
+}
+
+.firmware-operation-page .update-receiver-card.offline {
+  border-left-color: var(--modus-wc-color-error, #da212c);
+}
+
+.firmware-operation-page .update-receiver-check {
+  width: 22px;
+  min-width: 22px;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  cursor: pointer;
+}
+
+.firmware-operation-page .update-receiver-check input {
+  margin: 0;
+}
+
+.firmware-operation-page .update-receiver-summary {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.firmware-operation-page .update-receiver-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.firmware-operation-page .update-receiver-heading > strong {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--heading);
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.firmware-operation-page .update-receiver-heading .model-pill,
+.firmware-operation-page .update-receiver-heading .credential-pill,
+.firmware-operation-page .update-receiver-heading .status-pill {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.firmware-operation-page .update-receiver-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.firmware-operation-page .update-receiver-stats {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow: visible;
+}
+
+.firmware-operation-page .update-receiver-stats .firmware-mini-stat {
+  width: auto;
+  min-width: 0;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  font-size: 10px !important;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.firmware-operation-page .update-receiver-actions {
+  min-width: 0;
+  display: grid;
+  align-items: center;
+  justify-content: end;
+  gap: 5px;
+}
+
+.firmware-operation-page .group-update-receiver-actions {
+  grid-template-columns: minmax(78px, auto) 32px 32px;
+}
+
+.firmware-operation-page .group-update-receiver-actions .preflight-pill {
+  width: auto;
+  min-width: 78px;
+  min-height: 32px;
+  margin: 0;
+}
+
+.firmware-operation-page .group-update-receiver-actions .firmware-edit-button,
+.firmware-operation-page .group-update-receiver-actions .firmware-remove-button {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+}
+
+.firmware-operation-page .single-update-receiver-option,
+.firmware-operation-page .single-selected-update-receiver {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.firmware-operation-page .single-selected-update-receiver {
+  flex: 0 0 auto;
+  margin: 8px;
+  width: calc(100% - 16px);
+}
+
+.firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-receiver-list {
+  gap: 7px !important;
+  padding: 8px !important;
+}
+
+.firmware-operation-page .group-update-receiver-card {
+  min-height: 88px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 9px 11px;
+}
+
+.firmware-operation-page .update-receiver-chevron {
+  color: var(--muted);
+}
+
+.firmware-operation-page .update-receiver-clear {
+  align-self: start;
+}
+
+.firmware-operation-page .multiple-update-receiver-card {
+  grid-template-columns: 22px minmax(0, 1fr) minmax(145px, 180px);
+}
+
+.firmware-operation-page .update-receiver-model-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.firmware-operation-page .update-receiver-model-field > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.firmware-operation-page .update-receiver-model-field select {
+  width: 100%;
+  min-height: 34px;
+}
+
+[data-theme='modus-modern-dark'] .firmware-operation-page .update-receiver-card .model-pill,
+[data-theme='modus-classic-dark'] .firmware-operation-page .update-receiver-card .model-pill,
+[data-theme='connect-dark'] .firmware-operation-page .update-receiver-card .model-pill {
+  color: #8bd8ff !important;
+  background: #083e52;
+  border-color: #168fc2;
+}
+
+[data-theme='modus-modern-dark'] .firmware-operation-page .update-receiver-card .model-pill.unknown,
+[data-theme='modus-classic-dark'] .firmware-operation-page .update-receiver-card .model-pill.unknown,
+[data-theme='connect-dark'] .firmware-operation-page .update-receiver-card .model-pill.unknown {
+  color: #ffd66e !important;
+  background: #4a3a12;
+  border-color: #a77b12;
+}
+
+@container unified-receiver-pane (max-width: 660px) {
+  .firmware-operation-page .group-update-receiver-card,
+  .firmware-operation-page .multiple-update-receiver-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .firmware-operation-page .group-update-receiver-actions,
+  .firmware-operation-page .update-receiver-model-field {
+    grid-column: 2;
+    width: min(100%, 310px);
+    justify-self: start;
+  }
+}
+
+@container firmware-page (max-width: 900px) {
+  .firmware-operation-page {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace,
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page {
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    align-content: start;
+    overflow: visible;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-receiver-list-panel,
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-config-panel,
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-settings-actions {
+    grid-column: 1;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-receiver-list-panel {
+    grid-row: 1;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-config-panel {
+    grid-row: 2;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace.group-operation-page .firmware-settings-actions {
+    grid-row: 3;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace .firmware-receiver-list-panel {
+    height: min(620px, 62vh);
+    min-height: 410px;
+  }
+
+  .firmware-operation-page .firmware-unified-workspace .firmware-config-panel {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .firmware-operation-page .update-receiver-card,
+  .firmware-operation-page .single-receiver-picker button.update-receiver-card {
+    min-height: 82px;
+    padding-block: 7px;
+  }
+
+  .firmware-operation-page .update-receiver-stats .firmware-mini-stat {
+    min-height: 22px;
+  }
+}
+

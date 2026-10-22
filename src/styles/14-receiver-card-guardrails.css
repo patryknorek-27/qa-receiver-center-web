@@ -1,0 +1,422 @@
+/* Final receiver-card guardrails. Keep operational data readable at laptop sizes. */
+.firmware-group-page .firmware-list-panel .firmware-receiver-list {
+  grid-auto-rows: minmax(100px, auto);
+}
+
+.firmware-group-page .firmware-receiver-card {
+  min-height: 100px;
+  align-items: center;
+  overflow: hidden;
+}
+
+.firmware-group-page .firmware-receiver-main {
+  overflow: visible;
+}
+
+.firmware-group-page .firmware-receiver-title {
+  min-height: 22px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.firmware-group-page .firmware-receiver-title > strong {
+  flex: 0 1 auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.firmware-group-page .firmware-inline-stats {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.single-receiver-picker .single-receiver-option-card {
+  min-height: 92px;
+}
+
+.single-receiver-picker .single-receiver-option-title strong,
+.multiple-receiver-title strong {
+  flex: 0 1 auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.multiple-receiver-list {
+  grid-auto-rows: minmax(100px, auto);
+}
+
+.multiple-receiver-card {
+  min-height: 100px;
+  overflow: hidden;
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .firmware-group-page .firmware-list-panel .firmware-receiver-list,
+  .multiple-receiver-list {
+    grid-auto-rows: minmax(94px, auto);
+  }
+
+  .firmware-group-page .firmware-receiver-card,
+  .multiple-receiver-card {
+    min-height: 94px;
+  }
+
+  .single-receiver-picker .single-receiver-option-card {
+    min-height: 86px;
+  }
+}
+
+/* Unified firmware workspace and receiver cards. */
+.firmware-unified-workspace {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(520px, 1.62fr) minmax(360px, 0.88fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.firmware-unified-workspace .firmware-receiver-list-panel,
+.firmware-unified-workspace .firmware-config-panel,
+.firmware-unified-workspace .firmware-settings-actions {
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.firmware-unified-workspace .firmware-receiver-list-panel {
+  container-name: unified-receiver-pane;
+  container-type: inline-size;
+  height: 100%;
+  overflow: hidden;
+}
+
+.firmware-unified-workspace.group-operation-page {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.firmware-unified-workspace.group-operation-page .firmware-receiver-list-panel {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.firmware-unified-workspace.group-operation-page .firmware-config-panel {
+  grid-column: 2;
+  grid-row: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.firmware-unified-workspace.group-operation-page .firmware-settings-actions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.firmware-unified-workspace .firmware-config-panel {
+  height: 100%;
+  padding: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.firmware-unified-workspace .firmware-receiver-list,
+.firmware-unified-workspace .single-receiver-picker,
+.firmware-unified-workspace .multiple-receiver-list {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-padding-block: 8px;
+}
+
+.firmware-unified-workspace .single-update-card.firmware-receiver-list-panel,
+.firmware-unified-workspace .multiple-selection-panel.firmware-receiver-list-panel,
+.firmware-unified-workspace .firmware-list-panel.firmware-receiver-list-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.firmware-unified-workspace .single-receiver-picker,
+.firmware-unified-workspace .multiple-receiver-list,
+.firmware-unified-workspace .firmware-receiver-list {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+.update-receiver-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  overflow: hidden;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+button.update-receiver-card {
+  cursor: pointer;
+}
+
+button.update-receiver-card:hover {
+  background: color-mix(in srgb, var(--surface-subtle) 88%, var(--primary));
+  border-color: color-mix(in srgb, var(--border) 44%, var(--primary));
+}
+
+.update-receiver-card.selected {
+  background: color-mix(in srgb, var(--surface-subtle) 90%, var(--primary));
+  border-left-color: var(--primary);
+}
+
+.update-receiver-card.online {
+  border-left-color: color-mix(in srgb, var(--modus-wc-color-success, #006638) 68%, var(--border));
+}
+
+.update-receiver-card.offline {
+  border-left-color: var(--modus-wc-color-error, #da212c);
+}
+
+.update-receiver-check {
+  width: 22px;
+  min-width: 22px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  cursor: pointer;
+}
+
+.update-receiver-check input {
+  margin: 0;
+}
+
+.update-receiver-summary {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.update-receiver-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.update-receiver-heading > strong {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--heading);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.update-receiver-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-receiver-stats {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.update-receiver-stats .firmware-mini-stat {
+  min-width: 0;
+  min-height: 25px;
+  padding: 3px 8px;
+  font-size: 11px !important;
+  line-height: 1.2;
+}
+
+.update-receiver-actions {
+  min-width: 0;
+  display: grid;
+  align-items: center;
+  justify-content: end;
+  gap: 6px;
+}
+
+.group-update-receiver-actions {
+  grid-template-columns: minmax(84px, auto) 34px 34px;
+}
+
+.group-update-receiver-actions .preflight-pill {
+  width: auto;
+  min-width: 84px;
+  min-height: 34px;
+}
+
+.group-update-receiver-actions .firmware-edit-button,
+.group-update-receiver-actions .firmware-remove-button {
+  width: 34px;
+  height: 34px;
+}
+
+.single-update-receiver-option,
+.single-selected-update-receiver {
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+}
+
+.single-update-receiver-option .receiver-state-dot,
+.single-selected-update-receiver .receiver-state-dot {
+  grid-column: 1;
+}
+
+.update-receiver-chevron {
+  color: var(--muted);
+}
+
+.update-receiver-clear {
+  align-self: start;
+}
+
+.multiple-update-receiver-card {
+  grid-template-columns: 22px minmax(0, 1fr) minmax(150px, 190px);
+}
+
+.update-receiver-model-field {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.update-receiver-model-field > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.update-receiver-model-field select {
+  width: 100%;
+  min-height: 36px;
+}
+
+.update-receiver-card .model-pill {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme='modus-modern-dark'] .update-receiver-card .model-pill,
+[data-theme='modus-classic-dark'] .update-receiver-card .model-pill,
+[data-theme='connect-dark'] .update-receiver-card .model-pill {
+  color: #8bd8ff !important;
+  background: #083e52;
+  border-color: #168fc2;
+}
+
+[data-theme='modus-modern-dark'] .update-receiver-card .model-pill.unknown,
+[data-theme='modus-classic-dark'] .update-receiver-card .model-pill.unknown,
+[data-theme='connect-dark'] .update-receiver-card .model-pill.unknown {
+  color: #ffd66e !important;
+  background: #4a3a12;
+  border-color: #a77b12;
+}
+
+@container unified-receiver-pane (max-width: 650px) {
+  .group-update-receiver-card,
+  .multiple-update-receiver-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .group-update-receiver-actions,
+  .update-receiver-model-field {
+    grid-column: 2;
+    width: min(100%, 300px);
+    justify-self: start;
+  }
+}
+
+@container firmware-page (max-width: 900px) {
+  .firmware-operation-page {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .firmware-unified-workspace,
+  .firmware-unified-workspace.group-operation-page {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    overflow: visible;
+  }
+
+  .firmware-unified-workspace.group-operation-page .firmware-receiver-list-panel,
+  .firmware-unified-workspace.group-operation-page .firmware-config-panel,
+  .firmware-unified-workspace.group-operation-page .firmware-settings-actions {
+    grid-column: 1;
+  }
+
+  .firmware-unified-workspace.group-operation-page .firmware-receiver-list-panel {
+    grid-row: 1;
+  }
+
+  .firmware-unified-workspace.group-operation-page .firmware-config-panel {
+    grid-row: 2;
+  }
+
+  .firmware-unified-workspace.group-operation-page .firmware-settings-actions {
+    grid-row: 3;
+  }
+
+  .firmware-unified-workspace .firmware-receiver-list-panel {
+    height: min(620px, 62vh);
+    min-height: 420px;
+  }
+
+  .firmware-unified-workspace .firmware-config-panel {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 761px) {
+  .update-receiver-card {
+    min-height: 90px;
+    padding-block: 8px;
+  }
+
+  .update-receiver-stats .firmware-mini-stat {
+    min-height: 23px;
+  }
+}
+
