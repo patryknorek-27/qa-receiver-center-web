@@ -1,0 +1,10 @@
+# Czytane przez ripgrep/fd (a więc Claude Code, Codex, Copilot): pomijaj szum i duże generowane pliki.
+package-lock.json
+Cargo.lock
+src-tauri/icons/
+src-tauri/gen/
+src/assets/
+public/
+docs/*.png
+.design-reference/
+.dotnet-home/
